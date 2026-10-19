@@ -1,0 +1,16 @@
+{
+  "name": "Adım Sayacı",
+  "short_name": "Adım Sayacı",
+  "description": "Thingy:53 adım, zıplama ve çömelme sayacı",
+  "lang": "tr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f5f2",
+  "theme_color": "#1f7a4d",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

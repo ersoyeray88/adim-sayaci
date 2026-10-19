@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f7a4d">
+<title>Adım Sayacı</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+/* Tek sutun, telefon ekrani icin. Aktivite renkleri kartin LED renkleriyle ayni. */
+:root {
+  --bg: #f3f5f2;
+  --kart: #ffffff;
+  --yazi: #17201b;
+  --soluk: #5d6b63;
+  --cizgi: #d9e0db;
+  --vurgu: #1f7a4d;
+  --tehlike: #b3392f;
+
+  --yurume: #2e9e5b;
+  --kosma: #2f6fd6;
+  --ziplama: #d64545;
+  --cokme: #c9940c;
+  --diger: #9b4fd1;
+  --sabit: #8a968f;
+
+  --yazi-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sayi-font: ui-monospace, "SF Mono", "Roboto Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101512; --kart: #18201b; --yazi: #e6ece8; --soluk: #93a39a;
+    --cizgi: #2a352e; --vurgu: #4cc38a; --tehlike: #e5675c; --sabit: #6f7c74;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--yazi); font-family: var(--yazi-font);
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  -webkit-tap-highlight-color: transparent;
+}
+main { max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 15px; margin: 0; color: var(--soluk); font-weight: 600; }
+.durum {
+  font-size: 13px; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--cizgi); color: var(--soluk); white-space: nowrap;
+}
+.durum.bagli { color: var(--vurgu); border-color: var(--vurgu); }
+
+button {
+  font: inherit; font-size: 17px; font-weight: 600; padding: 14px; border-radius: 12px;
+  border: none; background: var(--vurgu); color: #fff; cursor: pointer;
+}
+button:disabled { opacity: .5; }
+button.ikincil { background: transparent; color: var(--soluk); border: 1px solid var(--cizgi); font-size: 15px; padding: 10px 14px; }
+button.ikincil.dikkat { color: var(--tehlike); border-color: var(--tehlike); }
+button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
+.dugmeler { display: flex; gap: 10px; }
+.dugmeler button { flex: 1; }
+
+.aktivite {
+  --renk: var(--sabit);
+  background: var(--renk); color: #fff; border-radius: 18px; padding: 22px 20px;
+  display: flex; flex-direction: column; gap: 14px; transition: background .3s;
+}
+.aktivite .etiket { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; opacity: .85; }
+.aktivite .ad { font-size: 44px; font-weight: 700; line-height: 1; }
+.guven { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.guven .cubuk { flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,.3); overflow: hidden; }
+.guven .dolu { height: 100%; width: 0; background: #fff; transition: width .3s; }
+.guven .yuzde { font-family: var(--sayi-font); min-width: 3.5em; text-align: right; }
+
+.bolum {
+  background: var(--kart); border: 1px solid var(--cizgi); border-radius: 16px;
+  padding: 16px; display: flex; flex-direction: column; gap: 12px;
+}
+.bolum-baslik { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bolum-baslik small { font-size: 12px; color: var(--soluk); }
+
+.sayaclar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sayac { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sayac .etiket { font-size: 13px; color: var(--soluk); }
+.sayac .deger { font-family: var(--sayi-font); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sayac.ana { grid-column: 1 / -1; }
+.sayac.ana .deger { font-size: 46px; }
+
+.grafik svg { display: block; width: 100%; height: auto; }
+.grafik .cubuk-bar { fill: var(--vurgu); opacity: .55; cursor: pointer; }
+.grafik .cubuk-bar.bugun, .grafik .cubuk-bar.secili { opacity: 1; }
+.grafik text { fill: var(--soluk); font-family: var(--yazi-font); font-size: 11px; }
+.grafik text.deger-yazi { fill: var(--yazi); font-family: var(--sayi-font); font-weight: 600; }
+.grafik line { stroke: var(--cizgi); stroke-width: 1; }
+.grafik-bilgi { font-size: 13px; color: var(--soluk); min-height: 1.3em; }
+.grafik-bilgi b { color: var(--yazi); font-family: var(--sayi-font); }
+
+.alt { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--soluk); }
+.alt b { color: var(--yazi); font-family: var(--sayi-font); font-weight: 600; }
+.uyari {
+  background: var(--kart); border: 1px solid var(--tehlike); border-radius: 12px;
+  padding: 12px 14px; font-size: 14px; line-height: 1.45;
+}
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Adım Sayacı</h1>
+    <span id="durum" class="durum">Bağlı değil</span>
+  </header>
+
+  <div id="uyari" class="uyari" hidden></div>
+
+  <button id="baglanBtn" type="button">Thingy'ye bağlan</button>
+
+  <section id="aktiviteKart" class="aktivite" aria-live="polite">
+    <span class="etiket">Şu an</span>
+    <span id="aktiviteAd" class="ad">—</span>
+    <div class="guven">
+      <span>Güven</span>
+      <div class="cubuk"><div id="guvenDolu" class="dolu"></div></div>
+      <span id="guvenYazi" class="yuzde">–</span>
+    </div>
+  </section>
+
+  <section class="bolum">
+    <div class="bolum-baslik"><h2>Thingy sayacı</h2><small>Pil <b id="pil">–</b></small></div>
+    <div class="sayaclar">
+      <div class="sayac ana"><span class="etiket">Adım</span><span id="adim" class="deger">0</span></div>
+      <div class="sayac"><span class="etiket">Zıplama</span><span id="ziplama" class="deger">0</span></div>
+      <div class="sayac"><span class="etiket">Çömelme</span><span id="comelme" class="deger">0</span></div>
+    </div>
+  </section>
+
+  <section class="bolum">
+    <div class="bolum-baslik"><h2>Bugün toplam</h2><small>telefonda saklanır</small></div>
+    <div class="sayaclar">
+      <div class="sayac"><span class="etiket">Adım</span><span id="bugunAdim" class="deger">0</span></div>
+      <div class="sayac"><span class="etiket">Zıplama</span><span id="bugunZiplama" class="deger">0</span></div>
+      <div class="sayac"><span class="etiket">Çömelme</span><span id="bugunComelme" class="deger">0</span></div>
+    </div>
+  </section>
+
+  <section class="bolum grafik">
+    <div class="bolum-baslik"><h2>Son 7 gün · adım</h2></div>
+    <svg id="grafik" viewBox="0 0 320 150" role="img" aria-label="Son 7 günün adım sayıları"></svg>
+    <div id="grafikBilgi" class="grafik-bilgi">Bir güne dokunarak sayısını gör.</div>
+  </section>
+
+  <div class="dugmeler">
+    <button id="sifirlaBtn" type="button" class="ikincil" disabled>Thingy sayacını sıfırla</button>
+    <button id="ayrilBtn" type="button" class="ikincil" hidden>Bağlantıyı kes</button>
+  </div>
+
+  <div class="alt">
+    <span>Son veri: <b id="sonVeri">–</b></span>
+    <span>Paket: <b id="paketSay">0</b></span>
+  </div>
+</main>
+
+<script>
+/* ============================================================
+ * 1. Thingy'deki kodla AYNI olmasi gereken sabitler
+ *    (ble_servis.c, ble_servis.h ve prj.conf)
+ * ============================================================ */
+const CIHAZ_ADI   = "Adim Sayaci";                            // prj.conf: CONFIG_BT_DEVICE_NAME
+const SERVIS_UUID = "6a8b0001-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // SERVIS_UUID
+const DURUM_UUID  = "6a8b0002-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // DURUM_UUID (Thingy -> telefon)
+const KOMUT_UUID  = "6a8b0003-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // KOMUT_UUID (telefon -> Thingy)
+const KOMUT_SIFIRLA = 0x01;                                    // BLE_KOMUT_SIFIRLA
+
+/* aktivite.h'daki sira (0..6) ve kartin LED renkleri */
+const AKTIVITELER = [
+  { ad: "Çömelme",  renk: "--cokme"   }, // 0
+  { ad: "Diğer",    renk: "--diger"   }, // 1
+  { ad: "Koşma",    renk: "--kosma"   }, // 2
+  { ad: "Sabit",    renk: "--sabit"   }, // 3
+  { ad: "Yürüme",   renk: "--yurume"  }, // 4
+  { ad: "Zıplama",  renk: "--ziplama" }, // 5
+  { ad: "Belirsiz", renk: "--sabit"   }, // 6
+];
+
+const $ = (id) => document.getElementById(id);
+const sayiYaz = (n) => n.toLocaleString("tr-TR");
+
+/* ============================================================
+ * 2. Gecmis: gunluk toplamlar telefonda (localStorage) saklanir
+ *
+ * Thingy'nin sayaci acildigindan beri toplami gonderir. Biz her pakette
+ * "bir oncekinden bu yana ne kadar artti" (fark) hesaplayip bugunun
+ * toplamina ekleriz:
+ *   - yeni >= eski : fark = yeni - eski
+ *   - yeni <  eski : Thingy yeniden basladi ya da sifirlandi,
+ *                    fark = yeni (sifirdan bu yana sayilanlar)
+ * Boylece Thingy kapanip acilsa da gunluk toplam kaybolmaz.
+ * ============================================================ */
+const GECMIS_ANAHTAR = "adim_gecmis_v1";   // { "2026-10-19": {adim, ziplama, comelme}, ... }
+const SON_ANAHTAR    = "adim_son_v1";      // Thingy'den gelen son sayac degerleri
+
+function oku(anahtar, varsayilan) {
+  try { return JSON.parse(localStorage.getItem(anahtar)) ?? varsayilan; }
+  catch { return varsayilan; }
+}
+function yaz(anahtar, deger) {
+  try { localStorage.setItem(anahtar, JSON.stringify(deger)); } catch { /* yer yoksa gec */ }
+}
+
+/* Telefonun yerel saatine gore "YYYY-AA-GG" */
+function gunAnahtari(tarih = new Date()) {
+  const a = String(tarih.getMonth() + 1).padStart(2, "0");
+  const g = String(tarih.getDate()).padStart(2, "0");
+  return `${tarih.getFullYear()}-${a}-${g}`;
+}
+
+let gecmis = oku(GECMIS_ANAHTAR, {});
+let son = oku(SON_ANAHTAR, null);
+
+function gecmiseEkle(d) {
+  const alanlar = ["adim", "ziplama", "comelme"];
+  const bugun = gunAnahtari();
+  const kayit = gecmis[bugun] || { adim: 0, ziplama: 0, comelme: 0 };
+
+  if (son) {
+    for (const k of alanlar) {
+      const fark = d[k] >= son[k] ? d[k] - son[k] : d[k];
+      kayit[k] += fark;
+    }
+  }
+  /* son == null: app ilk kez veri aliyor; o ana kadarki sayilar
+   * hangi gune ait bilinmedigi icin eklemiyoruz. */
+
+  gecmis[bugun] = kayit;
+  son = { adim: d.adim, ziplama: d.ziplama, comelme: d.comelme };
+  yaz(GECMIS_ANAHTAR, gecmis);
+  yaz(SON_ANAHTAR, son);
+}
+
+/* ============================================================
+ * 3. Ekran
+ * ============================================================ */
+let paketSayisi = 0;
+let sonVeriZamani = 0;
+let seciliGun = null;
+
+/* Gelen 11 baytlik paketi coz (ble_servis.h'deki ble_durum_t)
+ * bayt 0: aktivite | 1: guven | 2-5: adim | 6-7: ziplama | 8-9: comelme | 10: pil */
+function paketiCoz(dv) {
+  return {
+    aktivite: dv.getUint8(0),
+    guven:    dv.getUint8(1),
+    adim:     dv.getUint32(2, true),
+    ziplama:  dv.getUint16(6, true),
+    comelme:  dv.getUint16(8, true),
+    pil:      dv.getUint8(10),
+  };
+}
+
+function canliGuncelle(d) {
+  const akt = AKTIVITELER[d.aktivite] || AKTIVITELER[6];
+  $("aktiviteAd").textContent = akt.ad;
+  $("aktiviteKart").style.setProperty("--renk", `var(${akt.renk})`);
+  $("guvenDolu").style.width = d.guven + "%";
+  $("guvenYazi").textContent = "%" + d.guven;
+  $("adim").textContent    = sayiYaz(d.adim);
+  $("ziplama").textContent = sayiYaz(d.ziplama);
+  $("comelme").textContent = sayiYaz(d.comelme);
+  $("pil").textContent     = d.pil === 255 ? "–" : "%" + d.pil;
+  $("paketSay").textContent = ++paketSayisi;
+  sonVeriZamani = Date.now();
+}
+
+function bugunuGoster() {
+  const k = gecmis[gunAnahtari()] || { adim: 0, ziplama: 0, comelme: 0 };
+  $("bugunAdim").textContent    = sayiYaz(k.adim);
+  $("bugunZiplama").textContent = sayiYaz(k.ziplama);
+  $("bugunComelme").textContent = sayiYaz(k.comelme);
+}
+
+/* Son 7 gunun adim grafigi (SVG, tek seri) */
+const GUN_ADLARI = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+function son7Gun() {
+  const gunler = [];
+  for (let i = 6; i >= 0; i--) {
+    const t = new Date();
+    t.setHours(12, 0, 0, 0);
+    t.setDate(t.getDate() - i);
+    const k = gunAnahtari(t);
+    gunler.push({ anahtar: k, tarih: t, adim: (gecmis[k] || {}).adim || 0, bugun: i === 0 });
+  }
+  return gunler;
+}
+
+function grafikCiz() {
+  const svg = $("grafik");
+  const G = 320, Y = 150, ust = 22, alt = 22;           // cizim alani
+  const gunler = son7Gun();
+  const enCok = Math.max(...gunler.map((g) => g.adim));
+  const olcek = enCok > 0 ? enCok : 1;
+  const yuk = Y - ust - alt;
+  const aralik = G / 7, genislik = Math.min(24, aralik * 0.5);
+  const NS = "http://www.w3.org/2000/svg";
+  svg.replaceChildren();
+
+  const taban = document.createElementNS(NS, "line");
+  taban.setAttribute("x1", 0); taban.setAttribute("x2", G);
+  taban.setAttribute("y1", Y - alt); taban.setAttribute("y2", Y - alt);
+  svg.appendChild(taban);
+
+  gunler.forEach((g, i) => {
+    const cx = aralik * i + aralik / 2;
+    const h = Math.max(g.adim > 0 ? 3 : 0, (g.adim / olcek) * yuk);
+    const x = cx - genislik / 2, y = Y - alt - h, r = Math.min(4, h, genislik / 2);
+
+    /* Ust koseleri 4px yuvarlak, tabana oturan cubuk */
+    const yol = document.createElementNS(NS, "path");
+    yol.setAttribute("d", h <= 0 ? "" :
+      `M${x},${Y - alt} V${y + r} Q${x},${y} ${x + r},${y} H${x + genislik - r} ` +
+      `Q${x + genislik},${y} ${x + genislik},${y + r} V${Y - alt} Z`);
+    yol.setAttribute("class", "cubuk-bar" + (g.bugun ? " bugun" : "") + (seciliGun === g.anahtar ? " secili" : ""));
+    svg.appendChild(yol);
+
+    /* Dokunma alani cubuktan genis: bos gunlere de dokunulabilsin */
+    const alan = document.createElementNS(NS, "rect");
+    alan.setAttribute("x", cx - aralik / 2); alan.setAttribute("y", 0);
+    alan.setAttribute("width", aralik); alan.setAttribute("height", Y);
+    alan.setAttribute("fill", "transparent");
+    alan.style.cursor = "pointer";
+    alan.addEventListener("click", () => { seciliGun = g.anahtar; grafikCiz(); });
+    svg.appendChild(alan);
+
+    const etiket = document.createElementNS(NS, "text");
+    etiket.setAttribute("x", cx); etiket.setAttribute("y", Y - 6);
+    etiket.setAttribute("text-anchor", "middle");
+    etiket.textContent = g.bugun ? "Bugün" : GUN_ADLARI[g.tarih.getDay()];
+    svg.appendChild(etiket);
+
+    /* Her cubuga sayi yazmiyoruz: sadece bugun, en yuksek gun ve secili gun */
+    if ((g.bugun || g.adim === enCok || seciliGun === g.anahtar) && g.adim > 0) {
+      const d = document.createElementNS(NS, "text");
+      d.setAttribute("x", cx); d.setAttribute("y", y - 6);
+      d.setAttribute("text-anchor", "middle");
+      d.setAttribute("class", "deger-yazi");
+      d.textContent = sayiYaz(g.adim);
+      svg.appendChild(d);
+    }
+  });
+
+  const secili = gunler.find((g) => g.anahtar === seciliGun);
+  if (secili) {
+    const k = gecmis[secili.anahtar] || { adim: 0, ziplama: 0, comelme: 0 };
+    const tarih = secili.tarih.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long" });
+    $("grafikBilgi").innerHTML =
+      `${tarih}: <b>${sayiYaz(k.adim)}</b> adım, <b>${sayiYaz(k.ziplama)}</b> zıplama, <b>${sayiYaz(k.comelme)}</b> çömelme`;
+  }
+}
+
+/* ============================================================
+ * 4. Bluetooth
+ *    a) requestDevice: Chrome listeyi acar, sen secersin (ilk sefer)
+ *    b) gatt.connect: baglan
+ *    c) servis + iki karakteristik (durum ve komut kagidi)
+ *    d) startNotifications: "haber ver" dugmesine bas
+ *    Baglanti koparsa 3 sn'de bir kendiliginden yeniden dener.
+ * ============================================================ */
+let cihaz = null;
+let komutKagidi = null;
+let elleAyrildi = false;
+let yenidenZamanlayici = null;
+let ekranKilidi = null;
+const dinlenenler = new WeakSet();
+
+function bildirimGeldi(olay) {
+  const dv = olay.target.value;
+  if (dv.byteLength < 11) return;
+  const d = paketiCoz(dv);
+  canliGuncelle(d);
+  gecmiseEkle(d);
+  bugunuGoster();
+}
+
+async function baglantiyiKur() {
+  durumYaz("Bağlanıyor…");
+  const sunucu = await cihaz.gatt.connect();
+  const servis = await sunucu.getPrimaryService(SERVIS_UUID);
+  const durum  = await servis.getCharacteristic(DURUM_UUID);
+
+  try {
+    komutKagidi = await servis.getCharacteristic(KOMUT_UUID);
+  } catch {
+    komutKagidi = null;   // eski firmware: komut kagidi yok
+  }
+  $("sifirlaBtn").disabled = !komutKagidi;
+
+  /* Yeniden baglanmada Chrome ayni nesneyi verebilir: dinleyiciyi bir kez ekle */
+  if (!dinlenenler.has(durum)) {
+    durum.addEventListener("characteristicvaluechanged", bildirimGeldi);
+    dinlenenler.add(durum);
+  }
+  await durum.startNotifications();
+
+  durumYaz("Bağlı", true);
+  $("baglanBtn").hidden = true;
+  $("ayrilBtn").hidden = false;
+  uyariGoster("");
+  ekraniAcikTut();
+}
+
+/* Ilk baglanti: kullanici dugmeye basar, listeden secer */
+async function baglanDugmesi() {
+  try {
+    if (!cihaz) {
+      durumYaz("Aranıyor…");
+      cihaz = await navigator.bluetooth.requestDevice({
+        filters: [{ name: CIHAZ_ADI }],
+        optionalServices: [SERVIS_UUID],
+      });
+      cihaz.addEventListener("gattserverdisconnected", ayrildi);
+    }
+    elleAyrildi = false;
+    await baglantiyiKur();
+  } catch (hata) {
+    durumYaz("Bağlı değil");
+    if (hata.name !== "NotFoundError") uyariGoster("Bağlanamadı: " + hata.message);
+  }
+}
+
+function ayrildi() {
+  komutKagidi = null;
+  $("sifirlaBtn").disabled = true;
+  ekranKilidiniBirak();
+  if (elleAyrildi) {
+    durumYaz("Bağlı değil");
+    $("baglanBtn").hidden = false;
+    $("ayrilBtn").hidden = true;
+    return;
+  }
+  durumYaz("Yeniden bağlanıyor…");
+  yenidenDene();
+}
+
+/* Kopunca 3 sn'de bir dene (Thingy uzaklasti, yeniden basladi vb.) */
+function yenidenDene() {
+  clearTimeout(yenidenZamanlayici);
+  yenidenZamanlayici = setTimeout(async () => {
+    if (elleAyrildi || !cihaz || cihaz.gatt.connected) return;
+    try {
+      await baglantiyiKur();
+    } catch {
+      yenidenDene();
+    }
+  }, 3000);
+}
+
+function ayrilDugmesi() {
+  elleAyrildi = true;
+  clearTimeout(yenidenZamanlayici);
+  if (cihaz && cihaz.gatt.connected) cihaz.gatt.disconnect();
+  else ayrildi();
+}
+
+/* Sifirla: yanlislikla basilmasin diye iki dokunus ister */
+let sifirlaOnay = null;
+async function sifirlaDugmesi() {
+  const btn = $("sifirlaBtn");
+  if (!sifirlaOnay) {
+    btn.textContent = "Emin misin? Tekrar dokun";
+    btn.classList.add("dikkat");
+    sifirlaOnay = setTimeout(sifirlaVazgec, 3000);
+    return;
+  }
+  sifirlaVazgec();
+  if (!komutKagidi) return;
+  try {
+    const veri = new Uint8Array([KOMUT_SIFIRLA]);
+    if (komutKagidi.writeValueWithResponse) await komutKagidi.writeValueWithResponse(veri);
+    else await komutKagidi.writeValue(veri);
+    son = { adim: 0, ziplama: 0, comelme: 0 };   // gunluk toplam etkilenmez
+    yaz(SON_ANAHTAR, son);
+    uyariGoster("");
+  } catch (hata) {
+    uyariGoster("Sıfırlama gönderilemedi: " + hata.message);
+  }
+}
+function sifirlaVazgec() {
+  clearTimeout(sifirlaOnay);
+  sifirlaOnay = null;
+  $("sifirlaBtn").textContent = "Thingy sayacını sıfırla";
+  $("sifirlaBtn").classList.remove("dikkat");
+}
+
+/* Bagliyken ekran kapanmasin: ekran kapanirsa Chrome Bluetooth'u durdurabilir */
+async function ekraniAcikTut() {
+  try {
+    if ("wakeLock" in navigator && !ekranKilidi) {
+      ekranKilidi = await navigator.wakeLock.request("screen");
+      ekranKilidi.addEventListener("release", () => { ekranKilidi = null; });
+    }
+  } catch { /* izin verilmezse onemli degil */ }
+}
+function ekranKilidiniBirak() {
+  if (ekranKilidi) ekranKilidi.release();
+  ekranKilidi = null;
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && cihaz && cihaz.gatt.connected) ekraniAcikTut();
+});
+
+/* App acilinca: daha once izin verilmis Thingy varsa listeyi acmadan baglan
+ * (Chrome bu ozelligi her telefonda sunmayabilir; yoksa dugmeyle baglanilir) */
+async function kayitliCihazaBaglan() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return;
+  try {
+    const cihazlar = await navigator.bluetooth.getDevices();
+    const bulunan = cihazlar.find((c) => c.name === CIHAZ_ADI);
+    if (!bulunan) return;
+    cihaz = bulunan;
+    cihaz.addEventListener("gattserverdisconnected", ayrildi);
+    elleAyrildi = false;
+    await baglantiyiKur();
+  } catch {
+    if (cihaz && !elleAyrildi) { durumYaz("Yeniden bağlanıyor…"); yenidenDene(); }
+  }
+}
+
+/* ============================================================
+ * 5. Yardimcilar ve baslangic
+ * ============================================================ */
+function durumYaz(yazi, bagli = false) {
+  $("durum").textContent = yazi;
+  $("durum").classList.toggle("bagli", bagli);
+}
+function uyariGoster(yazi) {
+  $("uyari").textContent = yazi;
+  $("uyari").hidden = !yazi;
+}
+
+setInterval(() => {
+  if (sonVeriZamani) {
+    const sn = Math.round((Date.now() - sonVeriZamani) / 1000);
+    $("sonVeri").textContent = sn <= 1 ? "şimdi" : sn + " sn önce";
+  }
+}, 1000);
+
+/* Grafik saniyede iki kez degil, 5 sn'de bir yenilensin */
+setInterval(grafikCiz, 5000);
+
+$("baglanBtn").addEventListener("click", baglanDugmesi);
+$("ayrilBtn").addEventListener("click", ayrilDugmesi);
+$("sifirlaBtn").addEventListener("click", sifirlaDugmesi);
+
+bugunuGoster();
+grafikCiz();
+
+if (!navigator.bluetooth) {
+  $("baglanBtn").disabled = true;
+  uyariGoster("Bu tarayıcı Bluetooth'a erişemiyor. Android'de Chrome ile ve https:// adresinden aç.");
+} else {
+  kayitliCihazaBaglan();
+}
+
+/* App'i telefona kaydet (internetsiz acilsin). Sadece https'te calisir. */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
