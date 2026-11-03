@@ -167,6 +167,7 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
       <div class="sayac"><span class="etiket">Yürünen yol</span><span id="yol" class="deger orta">–</span></div>
     </div>
     <div id="konumNot" class="konum-not">Thingy'ye bağlan.</div>
+    <button id="konumSifirlaBtn" type="button" class="ikincil" disabled>Konumu sıfırla (burası başlangıç)</button>
   </section>
 
   <section class="bolum">
@@ -204,7 +205,8 @@ const CIHAZ_ADI   = "Adim Sayaci";                            // prj.conf: CONFI
 const SERVIS_UUID = "6a8b0001-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // SERVIS_UUID
 const DURUM_UUID  = "6a8b0002-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // DURUM_UUID (Thingy -> telefon)
 const KOMUT_UUID  = "6a8b0003-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // KOMUT_UUID (telefon -> Thingy)
-const KOMUT_SIFIRLA = 0x01;                                    // BLE_KOMUT_SIFIRLA
+const KOMUT_SIFIRLA = 0x01;                                    // BLE_KOMUT_SIFIRLA (sayac + konum)
+const KOMUT_KONUM_SIFIRLA = 0x02;                              // BLE_KOMUT_KONUM_SIFIRLA (sadece konum)
 const YON_BILINMIYOR = 0xFFFF;                                 // BLE_YON_BILINMIYOR
 
 /* Dereceyi 8 yonlu ada cevir (Thingy'deki konum_yon_adi ile ayni):
@@ -473,6 +475,7 @@ async function baglantiyiKur() {
     komutKagidi = null;   // eski firmware: komut kagidi yok
   }
   $("sifirlaBtn").disabled = !komutKagidi;
+  $("konumSifirlaBtn").disabled = !komutKagidi;
 
   /* Yeniden baglanmada Chrome ayni nesneyi verebilir: dinleyiciyi bir kez ekle */
   if (!dinlenenler.has(durum)) {
@@ -510,6 +513,7 @@ async function baglanDugmesi() {
 function ayrildi() {
   komutKagidi = null;
   $("sifirlaBtn").disabled = true;
+  $("konumSifirlaBtn").disabled = true;
   ekranKilidiniBirak();
   if (elleAyrildi) {
     durumYaz("Bağlı değil");
@@ -564,6 +568,36 @@ async function sifirlaDugmesi() {
     uyariGoster("Sıfırlama gönderilemedi: " + hata.message);
   }
 }
+/* Konumu sifirla: sayaclara dokunmaz, bulundugun yer yeni baslangic olur.
+ * Yanlislikla basilmasin diye o da iki dokunus ister. */
+const KONUM_SIFIRLA_YAZI = "Konumu sıfırla (burası başlangıç)";
+let konumSifirlaOnay = null;
+async function konumSifirlaDugmesi() {
+  const btn = $("konumSifirlaBtn");
+  if (!konumSifirlaOnay) {
+    btn.textContent = "Emin misin? Tekrar dokun";
+    btn.classList.add("dikkat");
+    konumSifirlaOnay = setTimeout(konumSifirlaVazgec, 3000);
+    return;
+  }
+  konumSifirlaVazgec();
+  if (!komutKagidi) return;
+  try {
+    const veri = new Uint8Array([KOMUT_KONUM_SIFIRLA]);
+    if (komutKagidi.writeValueWithResponse) await komutKagidi.writeValueWithResponse(veri);
+    else await komutKagidi.writeValue(veri);
+    uyariGoster("");
+  } catch (hata) {
+    uyariGoster("Konum sıfırlama gönderilemedi: " + hata.message);
+  }
+}
+function konumSifirlaVazgec() {
+  clearTimeout(konumSifirlaOnay);
+  konumSifirlaOnay = null;
+  $("konumSifirlaBtn").textContent = KONUM_SIFIRLA_YAZI;
+  $("konumSifirlaBtn").classList.remove("dikkat");
+}
+
 function sifirlaVazgec() {
   clearTimeout(sifirlaOnay);
   sifirlaOnay = null;
@@ -630,6 +664,7 @@ setInterval(grafikCiz, 5000);
 $("baglanBtn").addEventListener("click", baglanDugmesi);
 $("ayrilBtn").addEventListener("click", ayrilDugmesi);
 $("sifirlaBtn").addEventListener("click", sifirlaDugmesi);
+$("konumSifirlaBtn").addEventListener("click", konumSifirlaDugmesi);
 
 bugunuGoster();
 grafikCiz();
