@@ -101,6 +101,15 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
 .grafik-bilgi { font-size: 13px; color: var(--soluk); min-height: 1.3em; }
 .grafik-bilgi b { color: var(--yazi); font-family: var(--sayi-font); }
 
+.konum-ust { display: flex; align-items: center; gap: 16px; }
+.pusula { width: 96px; height: 96px; flex: none; }
+.pusula circle { fill: none; stroke: var(--cizgi); stroke-width: 2; }
+.pusula text { fill: var(--soluk); font-family: var(--yazi-font); font-size: 11px; font-weight: 600; text-anchor: middle; }
+.pusula .ok { fill: var(--vurgu); }
+.pusula.yok .ok { fill: var(--cizgi); }
+.sayac .deger.orta { font-size: 20px; }
+.konum-not { font-size: 13px; color: var(--soluk); }
+
 .alt { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--soluk); }
 .alt b { color: var(--yazi); font-family: var(--sayi-font); font-weight: 600; }
 .uyari {
@@ -142,6 +151,25 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
   </section>
 
   <section class="bolum">
+    <div class="bolum-baslik"><h2>Konum</h2><small>başlangıç noktasına göre</small></div>
+    <div class="konum-ust">
+      <svg id="pusula" class="pusula yok" viewBox="0 0 100 100" role="img" aria-label="Yürüme yönü">
+        <circle cx="50" cy="50" r="42"/>
+        <text x="50" y="18">K</text><text x="84" y="54">D</text>
+        <text x="50" y="90">G</text><text x="16" y="54">B</text>
+        <polygon id="pusulaOk" class="ok" points="50,22 58,56 50,50 42,56"/>
+      </svg>
+      <div class="sayac"><span class="etiket">Yürüme yönü</span><span id="yon" class="deger">–</span></div>
+    </div>
+    <div class="sayaclar">
+      <div class="sayac"><span class="etiket">Uzaklık</span><span id="uzaklik" class="deger orta">–</span></div>
+      <div class="sayac"><span class="etiket">Yönü</span><span id="konumYon" class="deger orta">–</span></div>
+      <div class="sayac"><span class="etiket">Yürünen yol</span><span id="yol" class="deger orta">–</span></div>
+    </div>
+    <div id="konumNot" class="konum-not">Thingy'ye bağlan.</div>
+  </section>
+
+  <section class="bolum">
     <div class="bolum-baslik"><h2>Bugün toplam</h2><small>telefonda saklanır</small></div>
     <div class="sayaclar">
       <div class="sayac"><span class="etiket">Adım</span><span id="bugunAdim" class="deger">0</span></div>
@@ -157,7 +185,7 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
   </section>
 
   <div class="dugmeler">
-    <button id="sifirlaBtn" type="button" class="ikincil" disabled>Thingy sayacını sıfırla</button>
+    <button id="sifirlaBtn" type="button" class="ikincil" disabled>Sayacı ve konumu sıfırla</button>
     <button id="ayrilBtn" type="button" class="ikincil" hidden>Bağlantıyı kes</button>
   </div>
 
@@ -177,6 +205,15 @@ const SERVIS_UUID = "6a8b0001-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // SERVIS_UUID
 const DURUM_UUID  = "6a8b0002-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // DURUM_UUID (Thingy -> telefon)
 const KOMUT_UUID  = "6a8b0003-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // KOMUT_UUID (telefon -> Thingy)
 const KOMUT_SIFIRLA = 0x01;                                    // BLE_KOMUT_SIFIRLA
+const YON_BILINMIYOR = 0xFFFF;                                 // BLE_YON_BILINMIYOR
+
+/* Dereceyi 8 yonlu ada cevir (Thingy'deki konum_yon_adi ile ayni):
+ * her ad kendi yonunun +-22.5 derecesini kapsar */
+const YON_ADLARI = ["K", "KD", "D", "GD", "G", "GB", "B", "KB"];
+const yonAdi = (derece) => YON_ADLARI[Math.floor((derece + 22.5) / 45) % 8];
+/* Desimetre -> "19,8 m" */
+const metreYaz = (dm) =>
+  (dm / 10).toLocaleString("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " m";
 
 /* aktivite.h'daki sira (0..6) ve kartin LED renkleri */
 const AKTIVITELER = [
@@ -251,17 +288,53 @@ let paketSayisi = 0;
 let sonVeriZamani = 0;
 let seciliGun = null;
 
-/* Gelen 11 baytlik paketi coz (ble_servis.h'deki ble_durum_t)
- * bayt 0: aktivite | 1: guven | 2-5: adim | 6-7: ziplama | 8-9: comelme | 10: pil */
+/* Gelen paketi coz (ble_servis.h'deki ble_durum_t)
+ * bayt 0: aktivite | 1: guven | 2-5: adim | 6-7: ziplama | 8-9: comelme | 10: pil
+ * 19 baytlik yeni paket (03.11.2026'dan itibaren), ek olarak:
+ * 11-12: yon | 13-14: uzaklik (dm) | 15-16: konum yonu | 17-18: yol (dm)
+ * Eski Thingy yazilimi 11 bayt yollar: o zaman konum = null. */
 function paketiCoz(dv) {
-  return {
+  const d = {
     aktivite: dv.getUint8(0),
     guven:    dv.getUint8(1),
     adim:     dv.getUint32(2, true),
     ziplama:  dv.getUint16(6, true),
     comelme:  dv.getUint16(8, true),
     pil:      dv.getUint8(10),
+    konum:    null,
   };
+  if (dv.byteLength >= 19) {
+    d.konum = {
+      yon:       dv.getUint16(11, true),
+      uzaklikDm: dv.getUint16(13, true),
+      konumYon:  dv.getUint16(15, true),
+      yolDm:     dv.getUint16(17, true),
+    };
+  }
+  return d;
+}
+
+/* Konum kartini guncelle */
+function konumGuncelle(k) {
+  const pusula = $("pusula");
+  if (!k || k.yon === YON_BILINMIYOR) {
+    pusula.classList.add("yok");
+    $("pusulaOk").setAttribute("transform", "");
+    $("yon").textContent = $("uzaklik").textContent = $("konumYon").textContent = $("yol").textContent = "–";
+    $("konumNot").textContent = !k
+      ? "Thingy yazılımı konum göndermiyor (eski sürüm)."
+      : "Pusula kalibre değil: Thingy'nin üst butonuna bas.";
+    return;
+  }
+  pusula.classList.remove("yok");
+  /* Ok yukari (kuzey) cizildi; yon kadar saat yonunde dondur */
+  $("pusulaOk").setAttribute("transform", `rotate(${k.yon} 50 50)`);
+  $("yon").textContent = `${k.yon}° ${yonAdi(k.yon)}`;
+  $("uzaklik").textContent = metreYaz(k.uzaklikDm);
+  $("konumYon").textContent = k.konumYon === YON_BILINMIYOR ? "–" : `${k.konumYon}° ${yonAdi(k.konumYon)}`;
+  $("yol").textContent = metreYaz(k.yolDm);
+  $("konumNot").textContent =
+    `Başlangıç noktasının ${metreYaz(k.uzaklikDm)} ${yonAdi(k.konumYon)} tarafındasın.`;
 }
 
 function canliGuncelle(d) {
@@ -274,6 +347,7 @@ function canliGuncelle(d) {
   $("ziplama").textContent = sayiYaz(d.ziplama);
   $("comelme").textContent = sayiYaz(d.comelme);
   $("pil").textContent     = d.pil === 255 ? "–" : "%" + d.pil;
+  konumGuncelle(d.konum);
   $("paketSay").textContent = ++paketSayisi;
   sonVeriZamani = Date.now();
 }
@@ -493,7 +567,7 @@ async function sifirlaDugmesi() {
 function sifirlaVazgec() {
   clearTimeout(sifirlaOnay);
   sifirlaOnay = null;
-  $("sifirlaBtn").textContent = "Thingy sayacını sıfırla";
+  $("sifirlaBtn").textContent = "Sayacı ve konumu sıfırla";
   $("sifirlaBtn").classList.remove("dikkat");
 }
 

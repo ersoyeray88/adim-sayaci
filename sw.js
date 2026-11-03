@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v1";
+const SURUM = "adim-sayaci-v2";   /* v2 (03.11.2026): konum karti */
 const DOSYALAR = [
   "./",
   "./index.html",
