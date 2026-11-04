@@ -109,6 +109,8 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
 .pusula.yok .ok { fill: var(--cizgi); }
 .sayac .deger.orta { font-size: 20px; }
 .konum-not { font-size: 13px; color: var(--soluk); }
+#hareketDurum { font-size: 15px; font-weight: 600; color: inherit; }
+#hareketDurum:empty { display: none; }
 
 .alt { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--soluk); }
 .alt b { color: var(--yazi); font-family: var(--sayi-font); font-weight: 600; }
@@ -163,9 +165,10 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
     </div>
     <div class="sayaclar">
       <div class="sayac"><span class="etiket">Uzaklık</span><span id="uzaklik" class="deger orta">–</span></div>
-      <div class="sayac"><span class="etiket">Yönü</span><span id="konumYon" class="deger orta">–</span></div>
+      <div class="sayac"><span class="etiket">Yönü (referansa göre)</span><span id="konumYon" class="deger orta">–</span></div>
       <div class="sayac"><span class="etiket">Yürünen yol</span><span id="yol" class="deger orta">–</span></div>
     </div>
+    <div id="hareketDurum" class="konum-not"></div>
     <div id="konumNot" class="konum-not">Thingy'ye bağlan.</div>
     <button id="konumSifirlaBtn" type="button" class="ikincil" disabled>Konumu sıfırla (burası başlangıç)</button>
   </section>
@@ -213,6 +216,16 @@ const YON_BILINMIYOR = 0xFFFF;                                 // BLE_YON_BILINM
  * her ad kendi yonunun +-22.5 derecesini kapsar */
 const YON_ADLARI = ["K", "KD", "D", "GD", "G", "GB", "B", "KB"];
 const yonAdi = (derece) => YON_ADLARI[Math.floor((derece + 22.5) / 45) % 8];
+/* Referansa gore yon adi (Thingy'deki konum_goreli_adi ile ayni) */
+const GORELI_ADLAR = ["İleri", "İleri-sağ", "Sağ", "Geri-sağ", "Geri", "Geri-sol", "Sol", "İleri-sol"];
+const goreliAdi = (derece) => GORELI_ADLAR[Math.floor((derece + 22.5) / 45) % 8];
+/* durum bayti (ble_servis.h): bit 0 referans, bit 1-2 hareket */
+const DURUM_REFERANS = 0x01;
+const HAREKET_YAZI = [
+  "✅ Mutlak referans alındı, hareket başlayabilir.",   // 0: henuz hareket yok
+  "🚶 Hareket sürüyor.",                                // 1
+  "🏁 Hareket sonlandı (10 sn hareket yok).",           // 2
+];
 /* Desimetre -> "19,8 m" */
 const metreYaz = (dm) =>
   (dm / 10).toLocaleString("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " m";
@@ -294,7 +307,8 @@ let seciliGun = null;
  * bayt 0: aktivite | 1: guven | 2-5: adim | 6-7: ziplama | 8-9: comelme | 10: pil
  * 19 baytlik yeni paket (03.11.2026'dan itibaren), ek olarak:
  * 11-12: yon | 13-14: uzaklik (dm) | 15-16: konum yonu | 17-18: yol (dm)
- * Eski Thingy yazilimi 11 bayt yollar: o zaman konum = null. */
+ * 20 baytlik paket (04.11.2026): 19: durum (referans + hareket); konum yonu
+ * artik referansa gore. Eski Thingy yazilimi 11 bayt yollar: o zaman konum = null. */
 function paketiCoz(dv) {
   const d = {
     aktivite: dv.getUint8(0),
@@ -311,6 +325,7 @@ function paketiCoz(dv) {
       uzaklikDm: dv.getUint16(13, true),
       konumYon:  dv.getUint16(15, true),
       yolDm:     dv.getUint16(17, true),
+      durum:     dv.byteLength >= 20 ? dv.getUint8(19) : null,
     };
   }
   return d;
@@ -323,6 +338,7 @@ function konumGuncelle(k) {
     pusula.classList.add("yok");
     $("pusulaOk").setAttribute("transform", "");
     $("yon").textContent = $("uzaklik").textContent = $("konumYon").textContent = $("yol").textContent = "–";
+    $("hareketDurum").textContent = "";
     $("konumNot").textContent = !k
       ? "Thingy yazılımı konum göndermiyor (eski sürüm)."
       : "Pusula kalibre değil: Thingy'nin üst butonuna bas.";
@@ -332,11 +348,29 @@ function konumGuncelle(k) {
   /* Ok yukari (kuzey) cizildi; yon kadar saat yonunde dondur */
   $("pusulaOk").setAttribute("transform", `rotate(${k.yon} 50 50)`);
   $("yon").textContent = `${k.yon}° ${yonAdi(k.yon)}`;
+  /* Eski Thingy yazilimi (19 bayt): konum yonu pusulaya gore, durum yok */
+  if (k.durum === null) {
+    $("hareketDurum").textContent = "";
+    $("uzaklik").textContent = metreYaz(k.uzaklikDm);
+    $("konumYon").textContent = k.konumYon === YON_BILINMIYOR ? "–" : `${k.konumYon}° ${yonAdi(k.konumYon)}`;
+    $("yol").textContent = metreYaz(k.yolDm);
+    $("konumNot").textContent = "Thingy yazılımı eski: mutlak referans yok.";
+    return;
+  }
+  /* Referans henuz alinmadi: konum yok */
+  if (!(k.durum & DURUM_REFERANS)) {
+    $("uzaklik").textContent = $("konumYon").textContent = $("yol").textContent = "–";
+    $("hareketDurum").textContent = "⏳ Mutlak referans bekleniyor…";
+    $("konumNot").textContent = "Yürümek istediğin yöne dönüp birkaç saniye kımıldamadan dur.";
+    return;
+  }
+  const hareket = (k.durum >> 1) & 0x03;
+  $("hareketDurum").textContent = HAREKET_YAZI[hareket] || "";
   $("uzaklik").textContent = metreYaz(k.uzaklikDm);
-  $("konumYon").textContent = k.konumYon === YON_BILINMIYOR ? "–" : `${k.konumYon}° ${yonAdi(k.konumYon)}`;
+  $("konumYon").textContent = `${k.konumYon}° ${goreliAdi(k.konumYon)}`;
   $("yol").textContent = metreYaz(k.yolDm);
   $("konumNot").textContent =
-    `Başlangıç noktasının ${metreYaz(k.uzaklikDm)} ${yonAdi(k.konumYon)} tarafındasın.`;
+    `Başlangıca göre ${metreYaz(k.uzaklikDm)}, ${goreliAdi(k.konumYon).toLocaleLowerCase("tr-TR")} yönündesin.`;
 }
 
 function canliGuncelle(d) {
