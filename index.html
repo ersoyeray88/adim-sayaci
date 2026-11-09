@@ -216,9 +216,21 @@ const YON_BILINMIYOR = 0xFFFF;                                 // BLE_YON_BILINM
  * her ad kendi yonunun +-22.5 derecesini kapsar */
 const YON_ADLARI = ["K", "KD", "D", "GD", "G", "GB", "B", "KB"];
 const yonAdi = (derece) => YON_ADLARI[Math.floor((derece + 22.5) / 45) % 8];
-/* Referansa gore yon adi (Thingy'deki konum_goreli_adi ile ayni) */
-const GORELI_ADLAR = ["İleri", "İleri-sağ", "Sağ", "Geri-sağ", "Geri", "Geri-sol", "Sol", "İleri-sol"];
-const goreliAdi = (derece) => GORELI_ADLAR[Math.floor((derece + 22.5) / 45) % 8];
+/* Referansa gore yon adi (Thingy'deki konum_goreli_adi ile ayni).
+ * Aci -180..180: sag arti, sol eksi. Ekranda isaret yok, yon adi + buyukluk:
+ * -30 -> "İleri-sol 30°" */
+/* 4 bolge, taraf hep belli: 0 İleri, 1-89 İleri-sağ/sol, 90 Sağ/Sol, 91-179 Geri-sağ/sol, 180 Geri */
+const goreliAdi = (derece) => {
+  const a = Math.abs(derece), sol = derece < 0;
+  if (a === 0) return "İleri";
+  if (a >= 180) return "Geri";
+  if (a < 90) return sol ? "İleri-sol" : "İleri-sağ";
+  if (a === 90) return sol ? "Sol" : "Sağ";
+  return sol ? "Geri-sol" : "Geri-sağ";
+};
+const goreliYaz = (derece) => `${goreliAdi(derece)} ${Math.abs(derece)}°`;
+const KONUM_YON_BILINMIYOR = 32767;   // BLE_KONUM_YON_BILINMIYOR
+const YAKIN_DM = 20;                  // KONUM_YAKIN_M (2 m): daha yakinda aci anlamsiz
 /* durum bayti (ble_servis.h): bit 0 referans, bit 1-2 hareket */
 const DURUM_REFERANS = 0x01;
 const HAREKET_YAZI = [
@@ -308,7 +320,8 @@ let seciliGun = null;
  * 19 baytlik yeni paket (03.11.2026'dan itibaren), ek olarak:
  * 11-12: yon | 13-14: uzaklik (dm) | 15-16: konum yonu | 17-18: yol (dm)
  * 20 baytlik paket (04.11.2026): 19: durum (referans + hareket); konum yonu
- * artik referansa gore. Eski Thingy yazilimi 11 bayt yollar: o zaman konum = null. */
+ * artik referansa gore. 09.11: konum yonu isaretli (-180..180, sag +, sol -).
+ * Eski Thingy yazilimi 11 bayt yollar: o zaman konum = null. */
 function paketiCoz(dv) {
   const d = {
     aktivite: dv.getUint8(0),
@@ -323,7 +336,8 @@ function paketiCoz(dv) {
     d.konum = {
       yon:       dv.getUint16(11, true),
       uzaklikDm: dv.getUint16(13, true),
-      konumYon:  dv.getUint16(15, true),
+      /* 20 bayt: isaretli (-180..180); 19 bayt (eski): 0-360 */
+      konumYon:  dv.byteLength >= 20 ? dv.getInt16(15, true) : dv.getUint16(15, true),
       yolDm:     dv.getUint16(17, true),
       durum:     dv.byteLength >= 20 ? dv.getUint8(19) : null,
     };
@@ -367,10 +381,16 @@ function konumGuncelle(k) {
   const hareket = (k.durum >> 1) & 0x03;
   $("hareketDurum").textContent = HAREKET_YAZI[hareket] || "";
   $("uzaklik").textContent = metreYaz(k.uzaklikDm);
-  $("konumYon").textContent = `${k.konumYon}° ${goreliAdi(k.konumYon)}`;
   $("yol").textContent = metreYaz(k.yolDm);
+  /* 2 m'den yakin: aci sadece birikmis hatanin yonu, gosterme */
+  if (k.konumYon === KONUM_YON_BILINMIYOR || k.uzaklikDm < YAKIN_DM) {
+    $("konumYon").textContent = "–";
+    $("konumNot").textContent = `Başlangıç noktasındasın (${metreYaz(k.uzaklikDm)}).`;
+    return;
+  }
+  $("konumYon").textContent = goreliYaz(k.konumYon);
   $("konumNot").textContent =
-    `Başlangıca göre ${metreYaz(k.uzaklikDm)}, ${goreliAdi(k.konumYon).toLocaleLowerCase("tr-TR")} yönündesin.`;
+    `Başlangıca göre ${metreYaz(k.uzaklikDm)}, ${goreliYaz(k.konumYon).toLocaleLowerCase("tr-TR")} yönündesin.`;
 }
 
 function canliGuncelle(d) {
