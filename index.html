@@ -23,6 +23,7 @@
   --kosma: #2f6fd6;
   --ziplama: #d64545;
   --cokme: #c9940c;
+  --uyari: #c47f00;   /* manyetik anomali */
   --diger: #9b4fd1;
   --sabit: #8a968f;
 
@@ -107,9 +108,14 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
 .pusula text { fill: var(--soluk); font-family: var(--yazi-font); font-size: 11px; font-weight: 600; text-anchor: middle; }
 .pusula .ok { fill: var(--vurgu); }
 .pusula.yok .ok { fill: var(--cizgi); }
+.pusula.anomali .ok { fill: var(--uyari); }
+.pusula.anomali circle { stroke: var(--uyari); stroke-dasharray: 6 4; }
+#anomaliUyari { font-size: 14px; font-weight: 600; color: var(--uyari); }
 .sayac .deger.orta { font-size: 20px; }
 .konum-not { font-size: 13px; color: var(--soluk); }
 #hareketDurum { font-size: 15px; font-weight: 600; color: inherit; }
+/* Baslangica 2 m'den yakin: belirgin yazi */
+#konumNot.baslangicta { font-size: 15px; font-weight: 600; color: var(--vurgu); }
 #hareketDurum:empty { display: none; }
 
 .alt { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--soluk); }
@@ -168,6 +174,7 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
       <div class="sayac"><span class="etiket">Yönü (referansa göre)</span><span id="konumYon" class="deger orta">–</span></div>
       <div class="sayac"><span class="etiket">Yürünen yol</span><span id="yol" class="deger orta">–</span></div>
     </div>
+    <div id="anomaliUyari" hidden>⚠️ Manyetik anomali: pusula güvenilmez, son iyi yön kullanılıyor.</div>
     <div id="hareketDurum" class="konum-not"></div>
     <div id="konumNot" class="konum-not">Thingy'ye bağlan.</div>
     <button id="konumSifirlaBtn" type="button" class="ikincil" disabled>Konumu sıfırla (burası başlangıç)</button>
@@ -233,6 +240,7 @@ const KONUM_YON_BILINMIYOR = 32767;   // BLE_KONUM_YON_BILINMIYOR
 const YAKIN_DM = 20;                  // KONUM_YAKIN_M (2 m): daha yakinda aci anlamsiz
 /* durum bayti (ble_servis.h): bit 0 referans, bit 1-2 hareket */
 const DURUM_REFERANS = 0x01;
+const DURUM_ANOMALI = 0x08;   // BLE_DURUM_ANOMALI (bit 3)
 const HAREKET_YAZI = [
   "✅ Mutlak referans alındı, hareket başlayabilir.",   // 0: henuz hareket yok
   "🚶 Hareket sürüyor.",                                // 1
@@ -348,6 +356,11 @@ function paketiCoz(dv) {
 /* Konum kartini guncelle */
 function konumGuncelle(k) {
   const pusula = $("pusula");
+  /* Manyetik anomali: uyari satiri + turuncu, kesikli pusula */
+  $("konumNot").classList.remove("baslangicta");   /* sadece 2 m icindeyken eklenir */
+  const anomali = !!k && k.durum !== null && (k.durum & DURUM_ANOMALI) !== 0;
+  $("anomaliUyari").hidden = !anomali;
+  pusula.classList.toggle("anomali", anomali);
   if (!k || k.yon === YON_BILINMIYOR) {
     pusula.classList.add("yok");
     $("pusulaOk").setAttribute("transform", "");
@@ -385,7 +398,8 @@ function konumGuncelle(k) {
   /* 2 m'den yakin: aci sadece birikmis hatanin yonu, gosterme */
   if (k.konumYon === KONUM_YON_BILINMIYOR || k.uzaklikDm < YAKIN_DM) {
     $("konumYon").textContent = "–";
-    $("konumNot").textContent = `Başlangıç noktasındasın (${metreYaz(k.uzaklikDm)}).`;
+    $("konumNot").textContent = `📍 Başlangıç konumundasınız (${metreYaz(k.uzaklikDm)}).`;
+    $("konumNot").classList.add("baslangicta");
     return;
   }
   $("konumYon").textContent = goreliYaz(k.konumYon);

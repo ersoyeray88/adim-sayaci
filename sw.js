@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v5";   /* v5 (09.11.2026): referans acisi sag/sol 0-180, 2 m yakinlik */
+const SURUM = "adim-sayaci-v7";   /* v7 (09.11.2026): baslangic konumundasiniz yazisi */
 const DOSYALAR = [
   "./",
   "./index.html",
