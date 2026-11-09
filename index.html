@@ -3,37 +3,50 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1f7a4d">
+<meta name="theme-color" content="#F5F7FA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F141B" media="(prefers-color-scheme: dark)">
 <title>Adım Sayacı</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
-/* Tek sutun, telefon ekrani icin. Aktivite renkleri kartin LED renkleriyle ayni. */
+/* Tasarim A "Sade" (09.11.2026): acik zemin, beyaz kartlar, tek vurgu rengi (mavi).
+ * Aktivite rengi (LED renkleri) sadece aktivite rozetinde ve guven cubugunda.
+ * Internet yoksa Inter yuklenmez, sistem yazi tipi kullanilir. */
 :root {
-  --bg: #f3f5f2;
-  --kart: #ffffff;
-  --yazi: #17201b;
-  --soluk: #5d6b63;
-  --cizgi: #d9e0db;
-  --vurgu: #1f7a4d;
-  --tehlike: #b3392f;
+  --bg: #F5F7FA;
+  --kart: #FFFFFF;
+  --yuzey: #F5F7FA;     /* kart icindeki kutular */
+  --yazi: #0F172A;
+  --soluk: #5B6577;
+  --cizgi: #E3E8EF;
+  --cizgi-koyu: #CBD5E1;
+  --vurgu: #1D5FD1;
+  --vurgu-acik: #EEF4FF;
+  --tehlike: #B42318;
+  --basari: #166534;
+  --basari-acik: #E7F5EC;
 
-  --yurume: #2e9e5b;
-  --kosma: #2f6fd6;
-  --ziplama: #d64545;
-  --cokme: #c9940c;
-  --uyari: #c47f00;   /* manyetik anomali */
-  --diger: #9b4fd1;
-  --sabit: #8a968f;
+  --yurume: #2E9E5B;
+  --kosma: #2F6FD6;
+  --ziplama: #D64545;
+  --cokme: #C9940C;
+  --uyari: #B45309;     /* manyetik anomali */
+  --uyari-acik: #FFF4E5;
+  --diger: #9B4FD1;
+  --sabit: #64748B;
 
-  --yazi-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --sayi-font: ui-monospace, "SF Mono", "Roboto Mono", Menlo, monospace;
+  --yazi-font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #101512; --kart: #18201b; --yazi: #e6ece8; --soluk: #93a39a;
-    --cizgi: #2a352e; --vurgu: #4cc38a; --tehlike: #e5675c; --sabit: #6f7c74;
+    --bg: #0F141B; --kart: #161D27; --yuzey: #1C2431; --yazi: #E7ECF3; --soluk: #9AA6B6;
+    --cizgi: #263040; --cizgi-koyu: #334155; --vurgu: #6E9BF5; --vurgu-acik: #1A2740;
+    --tehlike: #F0786B; --basari: #6EE7A0; --basari-acik: #12301F;
+    --uyari: #F5A524; --uyari-acik: #33240C; --sabit: #7C8899;
     color-scheme: dark;
   }
 }
@@ -44,84 +57,118 @@ body {
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
            max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   -webkit-tap-highlight-color: transparent;
+  font-variant-numeric: tabular-nums;
 }
 main { max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+svg.ikon { flex: none; }
 
-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
-h2 { font-size: 15px; margin: 0; color: var(--soluk); font-weight: 600; }
+/* --- Ust bar --- */
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 4px 2px; }
+.marka { display: flex; align-items: center; gap: 10px; }
+h1 { font-size: 22px; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 15px; margin: 0; font-weight: 600; }
 .durum {
-  font-size: 13px; padding: 5px 10px; border-radius: 999px;
-  border: 1px solid var(--cizgi); color: var(--soluk); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px;
+  background: var(--kart); border: 1px solid var(--cizgi); color: var(--soluk); white-space: nowrap;
 }
-.durum.bagli { color: var(--vurgu); border-color: var(--vurgu); }
+.durum::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cizgi-koyu); }
+.durum.bagli { background: var(--basari-acik); border-color: transparent; color: var(--basari); }
+.durum.bagli::before { background: #16A34A; }
 
+/* --- Dugmeler --- */
 button {
-  font: inherit; font-size: 17px; font-weight: 600; padding: 14px; border-radius: 12px;
+  font: inherit; font-size: 15px; font-weight: 600; min-height: 48px; padding: 12px 16px; border-radius: 14px;
   border: none; background: var(--vurgu); color: #fff; cursor: pointer;
 }
-button:disabled { opacity: .5; }
-button.ikincil { background: transparent; color: var(--soluk); border: 1px solid var(--cizgi); font-size: 15px; padding: 10px 14px; }
+button:disabled { opacity: .45; cursor: default; }
+button.ikincil { background: var(--kart); color: var(--yazi); border: 1px solid var(--cizgi-koyu); }
 button.ikincil.dikkat { color: var(--tehlike); border-color: var(--tehlike); }
-button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
+button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
 .dugmeler { display: flex; gap: 10px; }
 .dugmeler button { flex: 1; }
 
-.aktivite {
-  --renk: var(--sabit);
-  background: var(--renk); color: #fff; border-radius: 18px; padding: 22px 20px;
-  display: flex; flex-direction: column; gap: 14px; transition: background .3s;
+/* --- Kartlar --- */
+.bolum, .aktivite {
+  background: var(--kart); border: 1px solid var(--cizgi); border-radius: 20px;
+  padding: 20px; display: flex; flex-direction: column; gap: 14px;
 }
-.aktivite .etiket { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; opacity: .85; }
-.aktivite .ad { font-size: 44px; font-weight: 700; line-height: 1; }
-.guven { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-.guven .cubuk { flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,.3); overflow: hidden; }
-.guven .dolu { height: 100%; width: 0; background: #fff; transition: width .3s; }
-.guven .yuzde { font-family: var(--sayi-font); min-width: 3.5em; text-align: right; }
-
-.bolum {
-  background: var(--kart); border: 1px solid var(--cizgi); border-radius: 16px;
-  padding: 16px; display: flex; flex-direction: column; gap: 12px;
-}
-.bolum-baslik { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bolum-baslik { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .bolum-baslik small { font-size: 12px; color: var(--soluk); }
+.pil { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--soluk); }
+.pil b { color: var(--yazi); font-weight: 600; }
 
-.sayaclar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.sayac { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.sayac .etiket { font-size: 13px; color: var(--soluk); }
-.sayac .deger { font-family: var(--sayi-font); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.sayac.ana { grid-column: 1 / -1; }
-.sayac.ana .deger { font-size: 46px; }
+/* --- Aktivite --- */
+.aktivite { --renk: var(--sabit); }
+.aktivite-ust { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.aktivite .etiket { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--soluk); }
+.aktivite .ad { display: block; font-size: 40px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin-top: 4px; }
+.rozet {
+  width: 48px; height: 48px; border-radius: 14px; flex: none;
+  background: var(--renk); color: #fff; display: flex; align-items: center; justify-content: center;
+  transition: background .3s;
+}
+.guven { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--soluk); }
+.guven .cubuk { flex: 1; height: 8px; border-radius: 999px; background: var(--cizgi); overflow: hidden; }
+.guven .dolu { height: 100%; width: 0; border-radius: 999px; background: var(--renk); transition: width .3s, background .3s; }
+.guven .yuzde { min-width: 3.2em; text-align: right; font-weight: 600; color: var(--yazi); }
 
+/* --- Sayilar --- */
+.ana-sayi { display: flex; flex-direction: column; gap: 2px; }
+.ana-sayi .etiket, .kutu .etiket { font-size: 13px; color: var(--soluk); }
+.ana-sayi .deger { font-size: 56px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+.kutular { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.kutular.uc { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.kutu { background: var(--yuzey); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kutular.uc .kutu { padding: 12px; }
+.kutu .deger { font-size: 22px; font-weight: 700; }
+.kutu.genis { grid-column: 1 / -1; }
+.kutular.duz .kutu { background: none; padding: 0; }
+
+/* --- Konum --- */
+.konum-ust { display: flex; align-items: center; gap: 20px; }
+.pusula { width: 104px; height: 104px; flex: none; }
+.pusula .zemin { fill: var(--yuzey); stroke: var(--cizgi); stroke-width: 2; }
+.pusula text { fill: var(--soluk); font-family: var(--yazi-font); font-size: 10px; font-weight: 600; text-anchor: middle; }
+.pusula text.kuzey { fill: var(--yazi); font-weight: 700; }
+.pusula .ok { fill: var(--vurgu); }
+.pusula .kuyruk { fill: var(--cizgi-koyu); }
+.pusula .merkez { fill: var(--yazi); }
+.pusula.yok .ok, .pusula.yok .kuyruk { fill: var(--cizgi); }
+.pusula.anomali .ok { fill: var(--uyari); }
+.pusula.anomali .zemin { stroke: var(--uyari); stroke-dasharray: 6 4; }
+.yon-blok { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.yon-blok .etiket { font-size: 13px; color: var(--soluk); }
+.yon-blok .deger { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+
+.bilgi-kutu {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px;
+  background: var(--vurgu-acik); font-size: 14px; font-weight: 600;
+}
+.bilgi-kutu:empty { display: none; }
+#anomaliUyari { background: var(--uyari-acik); color: var(--uyari); }
+.konum-not { font-size: 13px; color: var(--soluk); line-height: 1.45; }
+/* Baslangica 2 m'den yakin: belirgin yazi */
+#konumNot.baslangicta {
+  font-size: 14px; font-weight: 600; color: var(--vurgu);
+  background: var(--vurgu-acik); padding: 12px 14px; border-radius: 14px;
+}
+
+/* --- Grafik --- */
 .grafik svg { display: block; width: 100%; height: auto; }
-.grafik .cubuk-bar { fill: var(--vurgu); opacity: .55; cursor: pointer; }
+.grafik .cubuk-bar { fill: var(--vurgu); opacity: .35; cursor: pointer; }
 .grafik .cubuk-bar.bugun, .grafik .cubuk-bar.secili { opacity: 1; }
 .grafik text { fill: var(--soluk); font-family: var(--yazi-font); font-size: 11px; }
-.grafik text.deger-yazi { fill: var(--yazi); font-family: var(--sayi-font); font-weight: 600; }
+.grafik text.deger-yazi { fill: var(--yazi); font-weight: 600; }
 .grafik line { stroke: var(--cizgi); stroke-width: 1; }
 .grafik-bilgi { font-size: 13px; color: var(--soluk); min-height: 1.3em; }
-.grafik-bilgi b { color: var(--yazi); font-family: var(--sayi-font); }
+.grafik-bilgi b { color: var(--yazi); }
 
-.konum-ust { display: flex; align-items: center; gap: 16px; }
-.pusula { width: 96px; height: 96px; flex: none; }
-.pusula circle { fill: none; stroke: var(--cizgi); stroke-width: 2; }
-.pusula text { fill: var(--soluk); font-family: var(--yazi-font); font-size: 11px; font-weight: 600; text-anchor: middle; }
-.pusula .ok { fill: var(--vurgu); }
-.pusula.yok .ok { fill: var(--cizgi); }
-.pusula.anomali .ok { fill: var(--uyari); }
-.pusula.anomali circle { stroke: var(--uyari); stroke-dasharray: 6 4; }
-#anomaliUyari { font-size: 14px; font-weight: 600; color: var(--uyari); }
-.sayac .deger.orta { font-size: 20px; }
-.konum-not { font-size: 13px; color: var(--soluk); }
-#hareketDurum { font-size: 15px; font-weight: 600; color: inherit; }
-/* Baslangica 2 m'den yakin: belirgin yazi */
-#konumNot.baslangicta { font-size: 15px; font-weight: 600; color: var(--vurgu); }
-#hareketDurum:empty { display: none; }
-
-.alt { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--soluk); }
-.alt b { color: var(--yazi); font-family: var(--sayi-font); font-weight: 600; }
+/* --- Alt --- */
+.alt { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--soluk); padding: 0 4px; }
+.alt b { color: var(--yazi); font-weight: 600; }
 .uyari {
-  background: var(--kart); border: 1px solid var(--tehlike); border-radius: 12px;
+  background: var(--kart); border: 1px solid var(--tehlike); border-radius: 14px;
   padding: 12px 14px; font-size: 14px; line-height: 1.45;
 }
 [hidden] { display: none !important; }
@@ -131,7 +178,10 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
 <body>
 <main>
   <header>
-    <h1>Adım Sayacı</h1>
+    <div class="marka">
+      <svg class="ikon" width="32" height="32" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#1D5FD1"/><rect x="18" y="30" width="11" height="20" rx="5.5" fill="#fff"/><rect x="35" y="14" width="11" height="20" rx="5.5" fill="#fff" opacity="0.75"/></svg>
+      <h1>Adım Sayacı</h1>
+    </div>
     <span id="durum" class="durum">Bağlı değil</span>
   </header>
 
@@ -140,8 +190,15 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
   <button id="baglanBtn" type="button">Thingy'ye bağlan</button>
 
   <section id="aktiviteKart" class="aktivite" aria-live="polite">
-    <span class="etiket">Şu an</span>
-    <span id="aktiviteAd" class="ad">—</span>
+    <div class="aktivite-ust">
+      <div>
+        <span class="etiket">Şu an</span>
+        <span id="aktiviteAd" class="ad">—</span>
+      </div>
+      <span class="rozet" aria-hidden="true">
+        <svg class="ikon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="2"/><path d="M12 8v6M8 11h8M9 21l3-7 3 7"/></svg>
+      </span>
+    </div>
     <div class="guven">
       <span>Güven</span>
       <div class="cubuk"><div id="guvenDolu" class="dolu"></div></div>
@@ -150,11 +207,17 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
   </section>
 
   <section class="bolum">
-    <div class="bolum-baslik"><h2>Thingy sayacı</h2><small>Pil <b id="pil">–</b></small></div>
-    <div class="sayaclar">
-      <div class="sayac ana"><span class="etiket">Adım</span><span id="adim" class="deger">0</span></div>
-      <div class="sayac"><span class="etiket">Zıplama</span><span id="ziplama" class="deger">0</span></div>
-      <div class="sayac"><span class="etiket">Çömelme</span><span id="comelme" class="deger">0</span></div>
+    <div class="bolum-baslik">
+      <h2>Thingy sayacı</h2>
+      <span class="pil">
+        <svg class="ikon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2"/></svg>
+        Pil <b id="pil">–</b>
+      </span>
+    </div>
+    <div class="ana-sayi"><span class="etiket">Adım</span><span id="adim" class="deger">0</span></div>
+    <div class="kutular">
+      <div class="kutu"><span class="etiket">Zıplama</span><span id="ziplama" class="deger">0</span></div>
+      <div class="kutu"><span class="etiket">Çömelme</span><span id="comelme" class="deger">0</span></div>
     </div>
   </section>
 
@@ -162,30 +225,37 @@ button:focus-visible { outline: 3px solid var(--yazi); outline-offset: 2px; }
     <div class="bolum-baslik"><h2>Konum</h2><small>başlangıç noktasına göre</small></div>
     <div class="konum-ust">
       <svg id="pusula" class="pusula yok" viewBox="0 0 100 100" role="img" aria-label="Yürüme yönü">
-        <circle cx="50" cy="50" r="42"/>
-        <text x="50" y="18">K</text><text x="84" y="54">D</text>
-        <text x="50" y="90">G</text><text x="16" y="54">B</text>
-        <polygon id="pusulaOk" class="ok" points="50,22 58,56 50,50 42,56"/>
+        <circle class="zemin" cx="50" cy="50" r="44"/>
+        <text class="kuzey" x="50" y="17">K</text><text x="86" y="54">D</text>
+        <text x="50" y="91">G</text><text x="14" y="54">B</text>
+        <g id="pusulaOk">
+          <polygon class="ok" points="50,22 57,52 50,47 43,52"/>
+          <polygon class="kuyruk" points="50,78 57,52 50,57 43,52"/>
+        </g>
+        <circle class="merkez" cx="50" cy="50" r="3"/>
       </svg>
-      <div class="sayac"><span class="etiket">Yürüme yönü</span><span id="yon" class="deger">–</span></div>
+      <div class="yon-blok"><span class="etiket">Yürüme yönü</span><span id="yon" class="deger">–</span></div>
     </div>
-    <div class="sayaclar">
-      <div class="sayac"><span class="etiket">Uzaklık</span><span id="uzaklik" class="deger orta">–</span></div>
-      <div class="sayac"><span class="etiket">Yönü (referansa göre)</span><span id="konumYon" class="deger orta">–</span></div>
-      <div class="sayac"><span class="etiket">Yürünen yol</span><span id="yol" class="deger orta">–</span></div>
+    <div class="kutular">
+      <div class="kutu genis"><span class="etiket">Yönü (referansa göre)</span><span id="konumYon" class="deger">–</span></div>
+      <div class="kutu"><span class="etiket">Uzaklık</span><span id="uzaklik" class="deger">–</span></div>
+      <div class="kutu"><span class="etiket">Yürünen yol</span><span id="yol" class="deger">–</span></div>
     </div>
-    <div id="anomaliUyari" hidden>⚠️ Manyetik anomali: pusula güvenilmez, son iyi yön kullanılıyor.</div>
-    <div id="hareketDurum" class="konum-not"></div>
+    <div id="anomaliUyari" class="bilgi-kutu" hidden>
+      <svg class="ikon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>
+      <span>Manyetik anomali: pusula güvenilmez, son iyi yön kullanılıyor.</span>
+    </div>
+    <div id="hareketDurum" class="bilgi-kutu"></div>
     <div id="konumNot" class="konum-not">Thingy'ye bağlan.</div>
     <button id="konumSifirlaBtn" type="button" class="ikincil" disabled>Konumu sıfırla (burası başlangıç)</button>
   </section>
 
   <section class="bolum">
     <div class="bolum-baslik"><h2>Bugün toplam</h2><small>telefonda saklanır</small></div>
-    <div class="sayaclar">
-      <div class="sayac"><span class="etiket">Adım</span><span id="bugunAdim" class="deger">0</span></div>
-      <div class="sayac"><span class="etiket">Zıplama</span><span id="bugunZiplama" class="deger">0</span></div>
-      <div class="sayac"><span class="etiket">Çömelme</span><span id="bugunComelme" class="deger">0</span></div>
+    <div class="kutular uc duz">
+      <div class="kutu"><span class="etiket">Adım</span><span id="bugunAdim" class="deger">0</span></div>
+      <div class="kutu"><span class="etiket">Zıplama</span><span id="bugunZiplama" class="deger">0</span></div>
+      <div class="kutu"><span class="etiket">Çömelme</span><span id="bugunComelme" class="deger">0</span></div>
     </div>
   </section>
 
@@ -242,9 +312,9 @@ const YAKIN_DM = 20;                  // KONUM_YAKIN_M (2 m): daha yakinda aci a
 const DURUM_REFERANS = 0x01;
 const DURUM_ANOMALI = 0x08;   // BLE_DURUM_ANOMALI (bit 3)
 const HAREKET_YAZI = [
-  "✅ Mutlak referans alındı, hareket başlayabilir.",   // 0: henuz hareket yok
-  "🚶 Hareket sürüyor.",                                // 1
-  "🏁 Hareket sonlandı (10 sn hareket yok).",           // 2
+  "Mutlak referans alındı, hareket başlayabilir.",   // 0: henuz hareket yok
+  "Hareket sürüyor.",                                // 1
+  "Hareket sonlandı (10 sn hareket yok).",           // 2
 ];
 /* Desimetre -> "19,8 m" */
 const metreYaz = (dm) =>
@@ -387,7 +457,7 @@ function konumGuncelle(k) {
   /* Referans henuz alinmadi: konum yok */
   if (!(k.durum & DURUM_REFERANS)) {
     $("uzaklik").textContent = $("konumYon").textContent = $("yol").textContent = "–";
-    $("hareketDurum").textContent = "⏳ Mutlak referans bekleniyor…";
+    $("hareketDurum").textContent = "Mutlak referans bekleniyor…";
     $("konumNot").textContent = "Yürümek istediğin yöne dönüp birkaç saniye kımıldamadan dur.";
     return;
   }
@@ -398,7 +468,7 @@ function konumGuncelle(k) {
   /* 2 m'den yakin: aci sadece birikmis hatanin yonu, gosterme */
   if (k.konumYon === KONUM_YON_BILINMIYOR || k.uzaklikDm < YAKIN_DM) {
     $("konumYon").textContent = "–";
-    $("konumNot").textContent = `📍 Başlangıç konumundasınız (${metreYaz(k.uzaklikDm)}).`;
+    $("konumNot").textContent = `Başlangıç konumundasınız (${metreYaz(k.uzaklikDm)}).`;
     $("konumNot").classList.add("baslangicta");
     return;
   }
