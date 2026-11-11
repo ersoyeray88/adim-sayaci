@@ -250,6 +250,16 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
     <button id="konumSifirlaBtn" type="button" class="ikincil" disabled>Konumu sıfırla (burası başlangıç)</button>
   </section>
 
+  <section id="katBolum" class="bolum" hidden>
+    <div class="bolum-baslik"><h2>Kat</h2><small>referans katına göre</small></div>
+    <div class="kutular">
+      <div class="kutu genis"><span class="etiket">Bulunduğun kat</span><span id="kat" class="deger">–</span></div>
+      <div class="kutu"><span class="etiket">Yükseklik</span><span id="yukseklik" class="deger">–</span></div>
+      <div class="kutu"><span class="etiket">Merdiven</span><span id="merdiven" class="deger">–</span></div>
+    </div>
+    <div id="katNot" class="konum-not"></div>
+  </section>
+
   <section class="bolum">
     <div class="bolum-baslik"><h2>Bugün toplam</h2><small>telefonda saklanır</small></div>
     <div class="kutular uc duz">
@@ -285,6 +295,7 @@ const CIHAZ_ADI   = "Adim Sayaci";                            // prj.conf: CONFI
 const SERVIS_UUID = "6a8b0001-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // SERVIS_UUID
 const DURUM_UUID  = "6a8b0002-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // DURUM_UUID (Thingy -> telefon)
 const KOMUT_UUID  = "6a8b0003-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // KOMUT_UUID (telefon -> Thingy)
+const KAT_UUID    = "6a8b0004-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // KAT_UUID (Thingy -> telefon, 11.11.2026)
 const KOMUT_SIFIRLA = 0x01;                                    // BLE_KOMUT_SIFIRLA (sayac + konum)
 const KOMUT_KONUM_SIFIRLA = 0x02;                              // BLE_KOMUT_KONUM_SIFIRLA (sadece konum)
 const YON_BILINMIYOR = 0xFFFF;                                 // BLE_YON_BILINMIYOR
@@ -316,6 +327,11 @@ const HAREKET_YAZI = [
   "Hareket sürüyor.",                                // 1
   "Hareket sonlandı (10 sn hareket yok).",           // 2
 ];
+/* Kat paketi durum bayti (ble_servis.h: BLE_KAT_...) */
+const KAT_OLCUM_VAR = 0x01;
+const KAT_YUKARI    = 0x02;
+const KAT_ASAGI     = 0x04;
+const KAT_REFERANS  = 0x08;
 /* Desimetre -> "19,8 m" */
 const metreYaz = (dm) =>
   (dm / 10).toLocaleString("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " m";
@@ -477,6 +493,42 @@ function konumGuncelle(k) {
     `Başlangıca göre ${metreYaz(k.uzaklikDm)}, ${goreliYaz(k.konumYon).toLocaleLowerCase("tr-TR")} yönündesin.`;
 }
 
+/* Kat kartini guncelle (ble_kat_t, 4 bayt):
+ * bayt 0-1: yukseklik cm (isaretli) | 2: kat (isaretli) | 3: durum */
+const katYaz = (n) => n === 0 ? "Referans katı" : `${Math.abs(n)} kat ${n > 0 ? "yukarı" : "aşağı"}`;
+const yukseklikYaz = (cm) =>
+  (cm < 0 ? "−" : "+") +
+  (Math.abs(cm) / 100).toLocaleString("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " m";
+
+function katGuncelle(k) {
+  $("katBolum").hidden = false;
+  if (!(k.durum & KAT_OLCUM_VAR)) {
+    $("kat").textContent = $("yukseklik").textContent = $("merdiven").textContent = "–";
+    $("katNot").textContent = "Basınç sensörü okunamıyor.";
+    return;
+  }
+  if (!(k.durum & KAT_REFERANS)) {
+    $("kat").textContent = $("yukseklik").textContent = $("merdiven").textContent = "–";
+    $("katNot").textContent = "Mutlak referans alınınca bulunduğun kat referans katı olur.";
+    return;
+  }
+  $("kat").textContent = katYaz(k.kat);
+  $("yukseklik").textContent = yukseklikYaz(k.yukseklikCm);
+  $("merdiven").textContent =
+    k.durum & KAT_YUKARI ? "Çıkıyor ↑" : k.durum & KAT_ASAGI ? "İniyor ↓" : "Yok";
+  $("katNot").textContent = "Konumu sıfırlayınca bulunduğun kat yeni referans katı olur.";
+}
+
+function katGeldi(olay) {
+  const dv = olay.target.value;
+  if (dv.byteLength < 4) return;
+  katGuncelle({
+    yukseklikCm: dv.getInt16(0, true),
+    kat:         dv.getInt8(2),
+    durum:       dv.getUint8(3),
+  });
+}
+
 function canliGuncelle(d) {
   const akt = AKTIVITELER[d.aktivite] || AKTIVITELER[6];
   $("aktiviteAd").textContent = akt.ad;
@@ -581,7 +633,7 @@ function grafikCiz() {
  * 4. Bluetooth
  *    a) requestDevice: Chrome listeyi acar, sen secersin (ilk sefer)
  *    b) gatt.connect: baglan
- *    c) servis + iki karakteristik (durum ve komut kagidi)
+ *    c) servis + karakteristikler (durum, komut ve kat kagidi)
  *    d) startNotifications: "haber ver" dugmesine bas
  *    Baglanti koparsa 3 sn'de bir kendiliginden yeniden dener.
  * ============================================================ */
@@ -621,6 +673,18 @@ async function baglantiyiKur() {
     dinlenenler.add(durum);
   }
   await durum.startNotifications();
+
+  /* Kat kagidi (11.11.2026): eski Thingy yazilimida yok, o zaman kart gizli kalir */
+  try {
+    const kat = await servis.getCharacteristic(KAT_UUID);
+    if (!dinlenenler.has(kat)) {
+      kat.addEventListener("characteristicvaluechanged", katGeldi);
+      dinlenenler.add(kat);
+    }
+    await kat.startNotifications();
+  } catch {
+    $("katBolum").hidden = true;
+  }
 
   durumYaz("Bağlı", true);
   $("baglanBtn").hidden = true;

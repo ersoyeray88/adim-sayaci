@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v8";   /* v8 (09.11.2026): yeni tasarim (A) + yeni simge */
+const SURUM = "adim-sayaci-v9";   /* v9 (11.11.2026): kat karti (barometre) */
 const DOSYALAR = [
   "./",
   "./index.html",
