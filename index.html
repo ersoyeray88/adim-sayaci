@@ -263,7 +263,7 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
     <div class="kutular">
       <div class="kutu genis"><span class="etiket">Bulunduğun kat</span><span id="kat" class="deger">–</span></div>
       <div class="kutu"><span class="etiket">Yükseklik</span><span id="yukseklik" class="deger">–</span></div>
-      <div class="kutu"><span class="etiket">Merdiven</span><span id="merdiven" class="deger">–</span></div>
+      <div class="kutu"><span class="etiket">Merdiven / asansör</span><span id="merdiven" class="deger">–</span></div>
     </div>
     <div id="katNot" class="konum-not"></div>
   </section>
@@ -340,6 +340,7 @@ const KAT_OLCUM_VAR = 0x01;
 const KAT_YUKARI    = 0x02;
 const KAT_ASAGI     = 0x04;
 const KAT_REFERANS  = 0x08;
+const KAT_ASANSOR   = 0x80;   /* 16.11: dikey hareket asansorle */
 /* Desimetre -> "19,8 m" */
 const metreYaz = (dm) =>
   (dm / 10).toLocaleString("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " m";
@@ -522,8 +523,9 @@ function katGuncelle(k) {
   }
   $("kat").textContent = katYaz(k.kat);
   $("yukseklik").textContent = yukseklikYaz(k.yukseklikCm);
+  const nasil = k.durum & KAT_ASANSOR ? "Asansör" : "Merdiven";
   $("merdiven").textContent =
-    k.durum & KAT_YUKARI ? "Çıkıyor ↑" : k.durum & KAT_ASAGI ? "İniyor ↓" : "Yok";
+    k.durum & KAT_YUKARI ? `${nasil} ↑` : k.durum & KAT_ASAGI ? `${nasil} ↓` : "Yok";
   $("katNot").textContent = "Konumu sıfırlayınca bulunduğun kat yeni referans katı olur.";
 }
 

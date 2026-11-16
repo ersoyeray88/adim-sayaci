@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v11";  /* v11 (16.11.2026): anomali degeri + jiroskop durumu */
+const SURUM = "adim-sayaci-v12";  /* v12 (16.11.2026): anomali degeri, jiroskop durumu, asansor */
 const DOSYALAR = [
   "./",
   "./index.html",
