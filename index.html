@@ -148,6 +148,10 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
 .bilgi-kutu:empty { display: none; }
 #anomaliUyari { background: var(--uyari-acik); color: var(--uyari); }
 .konum-not { font-size: 13px; color: var(--soluk); line-height: 1.45; }
+.jiro-durum { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 13px; color: var(--soluk); }
+.jiro-durum b { font-weight: 600; color: var(--uyari); }
+.jiro-durum b.hazir { color: var(--basari); }
+.jiro-ham { font-variant-numeric: tabular-nums; }
 /* Baslangica 2 m'den yakin: belirgin yazi */
 #konumNot.baslangicta {
   font-size: 14px; font-weight: 600; color: var(--vurgu);
@@ -241,9 +245,13 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
       <div class="kutu"><span class="etiket">Uzaklık</span><span id="uzaklik" class="deger">–</span></div>
       <div class="kutu"><span class="etiket">Yürünen yol</span><span id="yol" class="deger">–</span></div>
     </div>
+    <div id="jiroDurum" class="jiro-durum" hidden>
+      <span>Jiroskop: <b id="jiroYazi">–</b></span>
+      <span id="pusulaHam" class="jiro-ham"></span>
+    </div>
     <div id="anomaliUyari" class="bilgi-kutu" hidden>
       <svg class="ikon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>
-      <span>Manyetik anomali: pusula güvenilmez, son iyi yön kullanılıyor.</span>
+      <span>Manyetik anomali: pusula güvenilmez, dönüşler jiroskopla izleniyor.<span id="anomaliDeger"></span></span>
     </div>
     <div id="hareketDurum" class="bilgi-kutu"></div>
     <div id="konumNot" class="konum-not">Thingy'ye bağlan.</div>
@@ -527,6 +535,36 @@ function katGeldi(olay) {
     kat:         dv.getInt8(2),
     durum:       dv.getUint8(3),
   });
+  /* 16.11: bayt 4-5 = manyetik alan sapmasi (%) ve egim sapmasi (derece) */
+  if (dv.byteLength >= 6) {
+    const alan = dv.getInt8(4), egim = dv.getInt8(5);
+    const isaret = (n) => (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n);
+    $("anomaliDeger").textContent = ` Alan %${isaret(alan)}, eğim ${isaret(egim)}°.`;
+  }
+  /* 16.11 (2): durum bit 4-6 = jiroskop durumu, bayt 6-7 = ham pusula yonu */
+  if (dv.byteLength >= 8) jiroGuncelle(dv.getUint8(3), dv.getUint16(6, true));
+}
+
+const KAT_JIRO_VAR   = 0x10;
+const KAT_JIRO_HAZIR = 0x20;
+const KAT_UYUMSUZ    = 0x40;
+
+/* Jiroskop satiri. Sag/sol testi: saga donunce "Yurume yonu" ve "Pusula (ham)"
+ * ikisi de artmali; biri azaliyorsa jiroskop isareti ters. */
+function jiroGuncelle(durum, pusulaHam) {
+  $("jiroDurum").hidden = false;
+  const yazi = $("jiroYazi");
+  yazi.classList.toggle("hazir", (durum & KAT_JIRO_HAZIR) !== 0 && !(durum & KAT_UYUMSUZ));
+  if (!(durum & KAT_JIRO_VAR)) {
+    yazi.textContent = "yok (yön sadece pusuladan)";
+  } else if (!(durum & KAT_JIRO_HAZIR)) {
+    yazi.textContent = "bekleniyor, cihazı 1 sn kıpırdatmadan tut";
+  } else if (durum & KAT_UYUMSUZ) {
+    yazi.textContent = "hazır, pusula uyuşmuyor (sadece jiroskop)";
+  } else {
+    yazi.textContent = "hazır";
+  }
+  $("pusulaHam").textContent = pusulaHam === 0xFFFF ? "" : `Pusula (ham): ${pusulaHam}°`;
 }
 
 function canliGuncelle(d) {
