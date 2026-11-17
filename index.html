@@ -249,6 +249,10 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
       <span>Jiroskop: <b id="jiroYazi">–</b></span>
       <span id="pusulaHam" class="jiro-ham"></span>
     </div>
+    <div id="routerDurum" class="jiro-durum" hidden>
+      <span>Router sinyali: <b id="routerRssi" class="hazir">–</b></span>
+      <span id="routerAdres" class="jiro-ham"></span>
+    </div>
     <div id="anomaliUyari" class="bilgi-kutu" hidden>
       <svg class="ikon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>
       <span>Manyetik anomali: pusula güvenilmez, dönüşler jiroskopla izleniyor.<span id="anomaliDeger"></span></span>
@@ -545,6 +549,21 @@ function katGeldi(olay) {
   }
   /* 16.11 (2): durum bit 4-6 = jiroskop durumu, bayt 6-7 = ham pusula yonu */
   if (dv.byteLength >= 8) jiroGuncelle(dv.getUint8(3), dv.getUint16(6, true));
+  /* 17.11: bayt 8-11 = bagli olunan router: ortalama RSSI, son RSSI, RLOC16 */
+  if (dv.byteLength >= 12) routerGuncelle(dv.getInt8(8), dv.getInt8(9), dv.getUint16(10, true));
+}
+
+/* Bagli olunan router'in sinyali (RSSI testi). 127 = bilinmiyor */
+function routerGuncelle(ort, son, rloc) {
+  $("routerDurum").hidden = false;
+  if (ort === 127 || rloc === 0xFFFF) {
+    $("routerRssi").textContent = "bağlı değil";
+    $("routerAdres").textContent = "";
+    return;
+  }
+  const dbm = (n) => `${n < 0 ? "−" : ""}${Math.abs(n)} dBm`;
+  $("routerRssi").textContent = `${dbm(ort)} (son ${dbm(son)})`;
+  $("routerAdres").textContent = `Router 0x${rloc.toString(16).toUpperCase().padStart(4, "0")}`;
 }
 
 const KAT_JIRO_VAR   = 0x10;
