@@ -154,6 +154,11 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
 .jiro-ham { font-variant-numeric: tabular-nums; }
 .rssi-olcum { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--soluk); }
 .rssi-olcum button { min-height: 40px; padding: 8px 12px; font-size: 14px; }
+.router-liste { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--soluk); }
+.router-liste div { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+.router-liste b { color: var(--yazi); font-weight: 600; }
+.router-liste .bagli b { color: var(--basari); }
+.rssi-olcum li { white-space: pre-line; margin-bottom: 4px; }
 .rssi-olcum ol { margin: 0; padding-left: 20px; color: var(--yazi); font-variant-numeric: tabular-nums; }
 /* Baslangica 2 m'den yakin: belirgin yazi */
 #konumNot.baslangicta {
@@ -256,9 +261,10 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
       <span>Router sinyali: <b id="routerRssi" class="hazir">–</b></span>
       <span id="routerAdres" class="jiro-ham"></span>
     </div>
+    <div id="routerListe" class="router-liste" hidden></div>
     <div id="rssiOlcum" class="rssi-olcum" hidden>
       <button id="rssiBaslatBtn" type="button" class="ikincil">Ölçüm başlat (30 sn)</button>
-      <span id="rssiOlcumDurum">Sabit dur, başlat'a bas. Sonuç aşağıya eklenir.</span>
+      <span id="rssiOlcumDurum">Sabit dur, başlat'a bas. Her router için sonuç aşağıya eklenir.</span>
       <ol id="rssiSonuclar"></ol>
     </div>
     <div id="anomaliUyari" class="bilgi-kutu" hidden>
@@ -316,6 +322,7 @@ const SERVIS_UUID = "6a8b0001-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // SERVIS_UUID
 const DURUM_UUID  = "6a8b0002-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // DURUM_UUID (Thingy -> telefon)
 const KOMUT_UUID  = "6a8b0003-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // KOMUT_UUID (telefon -> Thingy)
 const KAT_UUID    = "6a8b0004-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // KAT_UUID (Thingy -> telefon, 11.11.2026)
+const ROUTER_UUID = "6a8b0005-3c2d-4e5f-9a1b-2c3d4e5f6a7b";   // ROUTER_UUID (Thingy -> telefon, 23.11.2026)
 const KOMUT_SIFIRLA = 0x01;                                    // BLE_KOMUT_SIFIRLA (sayac + konum)
 const KOMUT_KONUM_SIFIRLA = 0x02;                              // BLE_KOMUT_KONUM_SIFIRLA (sadece konum)
 const YON_BILINMIYOR = 0xFFFF;                                 // BLE_YON_BILINMIYOR
@@ -573,7 +580,7 @@ function routerGuncelle(ort, son, rloc) {
   $("routerRssi").textContent = `${dbm(ort)} (son ${dbm(son)})`;
   $("rssiOlcum").hidden = false;
   if (rssiOrnekler) rssiOrnekler.push(son);
-  $("routerAdres").textContent = `Router 0x${rloc.toString(16).toUpperCase().padStart(4, "0")}`;
+  $("routerAdres").textContent = `Kısa adres 0x${rloc.toString(16).toUpperCase().padStart(4, "0")}`;
 }
 
 /* 23.11: 30 sn RSSI olcumu. Paket 0.5 sn'de bir gelir; her paketteki "son"
@@ -581,11 +588,14 @@ function routerGuncelle(ort, son, rloc) {
  * hep dusurur; gercek uzakliga en yakin olan en guclu degerlerdir. */
 const RSSI_OLCUM_SN = 30;
 let rssiOrnekler = null;   /* null = olcum yok */
+let rssiTarama = null;     /* olcum sirasinda: router kimligi -> RSSI listesi */
+let sonTaramaNo = null;    /* ayni taramayi iki kez saymamak icin */
 let rssiSayac = null;
 let rssiNo = 0;
 
 function rssiOlcumBaslat() {
   rssiOrnekler = [];
+  rssiTarama = new Map();
   let kalan = RSSI_OLCUM_SN;
   $("rssiBaslatBtn").disabled = true;
   $("rssiOlcumDurum").textContent = `Ölçülüyor… ${kalan} sn (kıpırdama)`;
@@ -601,25 +611,87 @@ function rssiOlcumBaslat() {
 
 function rssiOlcumBitir() {
   clearInterval(rssiSayac);
-  const o = rssiOrnekler;
+  const bagli = rssiOrnekler, tarama = rssiTarama;
   rssiOrnekler = null;
+  rssiTarama = null;
   $("rssiBaslatBtn").disabled = false;
-  if (!o || o.length === 0) {
-    $("rssiOlcumDurum").textContent = "Veri gelmedi (router'a bağlı mı?). Tekrar dene.";
+
+  /* Satirlar: once taramada duyulan her router, sonra bagli olunanin sinyali */
+  const satirlar = [];
+  if (tarama) {
+    for (const [kimlik, o] of tarama) satirlar.push(`Router ${kimlik} (tarama): ${ozet(o)}`);
+  }
+  if (bagli && bagli.length) satirlar.push(`Bağlı olunan (ebeveyn): ${ozet(bagli)}`);
+  if (satirlar.length === 0) {
+    $("rssiOlcumDurum").textContent = "Veri gelmedi. Thingy bağlı mı? Tekrar dene.";
     return;
   }
-  const s = [...o].sort((a, b) => b - a);          /* guclu -> zayif */
-  const ortanca = s[Math.floor(s.length / 2)];
-  const ust20 = s[Math.floor(s.length * 0.2)];      /* en guclu %20'nin siniri */
-  const d = (n) => `${n < 0 ? "−" : ""}${Math.abs(n)}`;
   const saat = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
   rssiNo++;
   const li = document.createElement("li");
-  li.textContent = `${saat} · en güçlü ${d(s[0])} · güçlü %20 ${d(ust20)} · ortanca ${d(ortanca)} · en zayıf ${d(s[s.length - 1])} dBm (${o.length} örnek)`;
+  li.textContent = `${saat}\n` + satirlar.join("\n");
   $("rssiSonuclar").appendChild(li);
   $("rssiOlcumDurum").textContent = `${rssiNo}. ölçüm bitti. Mesafeyi not al, sonrakine geç.`;
   /* Ekran kapansa bile kaybolmasin: konsola da yaz */
   console.log("RSSI olcum", rssiNo, li.textContent);
+}
+
+/* Bir RSSI listesinin ozeti: en guclu, guclu %20 siniri, ortanca, en zayif */
+function ozet(o) {
+  const s = [...o].sort((a, b) => b - a);          /* guclu -> zayif */
+  const d = (n) => `${n < 0 ? "−" : ""}${Math.abs(n)}`;
+  return `en güçlü ${d(s[0])} · güçlü %20 ${d(s[Math.floor(s.length * 0.2)])}` +
+    ` · ortanca ${d(s[Math.floor(s.length / 2)])} · en zayıf ${d(s[s.length - 1])} dBm (${o.length} örnek)`;
+}
+
+/* 23.11: taramada duyulan router'lar (router karakteristigi).
+ *   bayt 0: tarama no, bayt 1: adet, sonra router basina 4 bayt:
+ *   kimlik (uint16), rssi (int8), durum (bit 7 bagli, bit 6 son taramada, bit 0-5 kac sn once) */
+const ROUTER_BAGLI = 0x80;
+const ROUTER_YENI  = 0x40;
+
+function routerlarGeldi(olay) {
+  const dv = olay.target.value;
+  if (dv.byteLength < 2) return;
+  const no = dv.getUint8(0);
+  const adet = Math.min(dv.getUint8(1), Math.floor((dv.byteLength - 2) / 4));
+  const yeniTarama = no !== sonTaramaNo;
+  sonTaramaNo = no;
+
+  const liste = $("routerListe");
+  liste.hidden = false;
+  $("rssiOlcum").hidden = false;
+  liste.replaceChildren();
+
+  const baslik = document.createElement("div");
+  baslik.textContent = adet ? "Taramada duyulan router'lar:" : "Taramada router duyulmadı.";
+  liste.appendChild(baslik);
+
+  for (let i = 0; i < adet; i++) {
+    const b = 2 + i * 4;
+    const kimlik = dv.getUint16(b, true).toString(16).toUpperCase().padStart(4, "0");
+    const rssi = dv.getInt8(b + 2);
+    const durum = dv.getUint8(b + 3);
+    const yas = durum & 0x3F;
+
+    const satir = document.createElement("div");
+    if (durum & ROUTER_BAGLI) satir.className = "bagli";
+    const sol = document.createElement("span");
+    sol.textContent = `Router ${kimlik}` + (durum & ROUTER_BAGLI ? " (bağlı)" : "");
+    const sag = document.createElement("span");
+    const deger = document.createElement("b");
+    deger.textContent = `${rssi < 0 ? "−" : ""}${Math.abs(rssi)} dBm`;
+    sag.appendChild(deger);
+    if (yas >= 3) sag.append(` (${yas >= 63 ? "60+" : yas} sn önce)`);
+    satir.append(sol, sag);
+    liste.appendChild(satir);
+
+    /* Olcum: sadece yeni taramada duyulanlar (ayni sonuc iki kez sayilmasin) */
+    if (rssiTarama && yeniTarama && (durum & ROUTER_YENI)) {
+      if (!rssiTarama.has(kimlik)) rssiTarama.set(kimlik, []);
+      rssiTarama.get(kimlik).push(rssi);
+    }
+  }
 }
 
 const KAT_JIRO_VAR   = 0x10;
@@ -799,6 +871,18 @@ async function baglantiyiKur() {
     await kat.startNotifications();
   } catch {
     $("katBolum").hidden = true;
+  }
+
+  /* Router kagidi (23.11.2026): eski Thingy yazilimida yok, o zaman liste gizli kalir */
+  try {
+    const router = await servis.getCharacteristic(ROUTER_UUID);
+    if (!dinlenenler.has(router)) {
+      router.addEventListener("characteristicvaluechanged", routerlarGeldi);
+      dinlenenler.add(router);
+    }
+    await router.startNotifications();
+  } catch {
+    $("routerListe").hidden = true;
   }
 
   durumYaz("Bağlı", true);
