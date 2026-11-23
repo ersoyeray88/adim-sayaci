@@ -152,6 +152,9 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
 .jiro-durum b { font-weight: 600; color: var(--uyari); }
 .jiro-durum b.hazir { color: var(--basari); }
 .jiro-ham { font-variant-numeric: tabular-nums; }
+.rssi-olcum { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--soluk); }
+.rssi-olcum button { min-height: 40px; padding: 8px 12px; font-size: 14px; }
+.rssi-olcum ol { margin: 0; padding-left: 20px; color: var(--yazi); font-variant-numeric: tabular-nums; }
 /* Baslangica 2 m'den yakin: belirgin yazi */
 #konumNot.baslangicta {
   font-size: 14px; font-weight: 600; color: var(--vurgu);
@@ -252,6 +255,11 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
     <div id="routerDurum" class="jiro-durum" hidden>
       <span>Router sinyali: <b id="routerRssi" class="hazir">–</b></span>
       <span id="routerAdres" class="jiro-ham"></span>
+    </div>
+    <div id="rssiOlcum" class="rssi-olcum" hidden>
+      <button id="rssiBaslatBtn" type="button" class="ikincil">Ölçüm başlat (30 sn)</button>
+      <span id="rssiOlcumDurum">Sabit dur, başlat'a bas. Sonuç aşağıya eklenir.</span>
+      <ol id="rssiSonuclar"></ol>
     </div>
     <div id="anomaliUyari" class="bilgi-kutu" hidden>
       <svg class="ikon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>
@@ -563,7 +571,55 @@ function routerGuncelle(ort, son, rloc) {
   }
   const dbm = (n) => `${n < 0 ? "−" : ""}${Math.abs(n)} dBm`;
   $("routerRssi").textContent = `${dbm(ort)} (son ${dbm(son)})`;
+  $("rssiOlcum").hidden = false;
+  if (rssiOrnekler) rssiOrnekler.push(son);
   $("routerAdres").textContent = `Router 0x${rloc.toString(16).toUpperCase().padStart(4, "0")}`;
+}
+
+/* 23.11: 30 sn RSSI olcumu. Paket 0.5 sn'de bir gelir; her paketteki "son"
+ * RSSI bir ornek. En guclu / ortanca / en zayif yazilir. Engeller sinyali
+ * hep dusurur; gercek uzakliga en yakin olan en guclu degerlerdir. */
+const RSSI_OLCUM_SN = 30;
+let rssiOrnekler = null;   /* null = olcum yok */
+let rssiSayac = null;
+let rssiNo = 0;
+
+function rssiOlcumBaslat() {
+  rssiOrnekler = [];
+  let kalan = RSSI_OLCUM_SN;
+  $("rssiBaslatBtn").disabled = true;
+  $("rssiOlcumDurum").textContent = `Ölçülüyor… ${kalan} sn (kıpırdama)`;
+  rssiSayac = setInterval(() => {
+    kalan--;
+    if (kalan > 0) {
+      $("rssiOlcumDurum").textContent = `Ölçülüyor… ${kalan} sn (kıpırdama)`;
+      return;
+    }
+    rssiOlcumBitir();
+  }, 1000);
+}
+
+function rssiOlcumBitir() {
+  clearInterval(rssiSayac);
+  const o = rssiOrnekler;
+  rssiOrnekler = null;
+  $("rssiBaslatBtn").disabled = false;
+  if (!o || o.length === 0) {
+    $("rssiOlcumDurum").textContent = "Veri gelmedi (router'a bağlı mı?). Tekrar dene.";
+    return;
+  }
+  const s = [...o].sort((a, b) => b - a);          /* guclu -> zayif */
+  const ortanca = s[Math.floor(s.length / 2)];
+  const ust20 = s[Math.floor(s.length * 0.2)];      /* en guclu %20'nin siniri */
+  const d = (n) => `${n < 0 ? "−" : ""}${Math.abs(n)}`;
+  const saat = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  rssiNo++;
+  const li = document.createElement("li");
+  li.textContent = `${saat} · en güçlü ${d(s[0])} · güçlü %20 ${d(ust20)} · ortanca ${d(ortanca)} · en zayıf ${d(s[s.length - 1])} dBm (${o.length} örnek)`;
+  $("rssiSonuclar").appendChild(li);
+  $("rssiOlcumDurum").textContent = `${rssiNo}. ölçüm bitti. Mesafeyi not al, sonrakine geç.`;
+  /* Ekran kapansa bile kaybolmasin: konsola da yaz */
+  console.log("RSSI olcum", rssiNo, li.textContent);
 }
 
 const KAT_JIRO_VAR   = 0x10;
@@ -773,6 +829,7 @@ async function baglanDugmesi() {
 
 function ayrildi() {
   komutKagidi = null;
+  if (rssiOrnekler) rssiOlcumBitir();
   $("sifirlaBtn").disabled = true;
   $("konumSifirlaBtn").disabled = true;
   ekranKilidiniBirak();
@@ -926,6 +983,7 @@ $("baglanBtn").addEventListener("click", baglanDugmesi);
 $("ayrilBtn").addEventListener("click", ayrilDugmesi);
 $("sifirlaBtn").addEventListener("click", sifirlaDugmesi);
 $("konumSifirlaBtn").addEventListener("click", konumSifirlaDugmesi);
+$("rssiBaslatBtn").addEventListener("click", rssiOlcumBaslat);
 
 bugunuGoster();
 grafikCiz();

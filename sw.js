@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v13";  /* v13 (17.11.2026): router sinyali (RSSI testi) */
+const SURUM = "adim-sayaci-v14";  /* v14 (23.11.2026): 30 sn RSSI olcumu */
 const DOSYALAR = [
   "./",
   "./index.html",
