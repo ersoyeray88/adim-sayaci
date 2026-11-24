@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v15";  /* v15 (23.11.2026): router taramasi listesi */
+const SURUM = "adim-sayaci-v16";  /* v16 (24.11.2026): yurume kaydi grafigi */
 const DOSYALAR = [
   "./",
   "./index.html",

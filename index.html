@@ -158,6 +158,12 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
 .router-liste div { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
 .router-liste b { color: var(--yazi); font-weight: 600; }
 .router-liste .bagli b { color: var(--basari); }
+.yurume-kayit { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--soluk);
+  border-top: 1px solid var(--cizgi); padding-top: 8px; }
+.yurume-kayit .dugmeler { display: flex; gap: 6px; }
+.yurume-kayit button { min-height: 40px; padding: 8px 10px; font-size: 14px; }
+.yurume-kayit svg { width: 100%; height: auto; background: var(--yuzey); border-radius: 8px; }
+.yurume-kayit .ozet { color: var(--yazi); font-variant-numeric: tabular-nums; white-space: pre-line; }
 .rssi-olcum li { white-space: pre-line; margin-bottom: 4px; }
 .rssi-olcum ol { margin: 0; padding-left: 20px; color: var(--yazi); font-variant-numeric: tabular-nums; }
 /* Baslangica 2 m'den yakin: belirgin yazi */
@@ -266,6 +272,18 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
       <button id="rssiBaslatBtn" type="button" class="ikincil">Ölçüm başlat (30 sn)</button>
       <span id="rssiOlcumDurum">Sabit dur, başlat'a bas. Her router için sonuç aşağıya eklenir.</span>
       <ol id="rssiSonuclar"></ol>
+      <div class="yurume-kayit">
+        <b>Yürüme kaydı</b>
+        <span id="yurumeDurum">Router'dan uzakta başla, Başlat'a bas, yanından yavaşça geçip öbür tarafa yürü. Yanından geçerken "Yanındayım"a bas.</span>
+        <div class="dugmeler">
+          <button id="yurumeBaslatBtn" type="button" class="ikincil">Başlat</button>
+          <button id="yurumeIsaretBtn" type="button" class="ikincil" disabled>Yanındayım</button>
+          <button id="yurumeBitirBtn" type="button" class="ikincil" disabled>Bitir</button>
+        </div>
+        <div id="yurumeGrafik"></div>
+        <span id="yurumeOzet" class="ozet"></span>
+        <button id="yurumeKopyalaBtn" type="button" class="ikincil" hidden>Veriyi kopyala (bana yapıştır)</button>
+      </div>
     </div>
     <div id="anomaliUyari" class="bilgi-kutu" hidden>
       <svg class="ikon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>
@@ -691,6 +709,135 @@ function routerlarGeldi(olay) {
       if (!rssiTarama.has(kimlik)) rssiTarama.set(kimlik, []);
       rssiTarama.get(kimlik).push(rssi);
     }
+    /* Yurume kaydi: yine sadece yeni taramadaki degerler, zamaniyla */
+    if (yurume && yeniTarama && (durum & ROUTER_YENI)) {
+      if (!yurume.routerlar.has(kimlik)) yurume.routerlar.set(kimlik, []);
+      yurume.routerlar.get(kimlik).push({ t: yurumeSaniye(), rssi });
+    }
+  }
+}
+
+/* 24.11: yurume kaydi. Router'in yanindan yururken her taramadaki sinyali
+ * zamaniyla kaydeder, sonunda grafik cizer. "Yanindayim" ile router'in
+ * yanindan gecilen an isaretlenir: sinyalin tepesi o ana denk geliyor mu? */
+let yurume = null;          /* null = kayit yok */
+let sonYurume = null;       /* biten son kayit (kopyalamak icin) */
+
+function yurumeSaniye() {
+  return (performance.now() - yurume.t0) / 1000;
+}
+
+function yurumeBaslat() {
+  yurume = { t0: performance.now(), routerlar: new Map(), isaretler: [] };
+  $("yurumeBaslatBtn").disabled = true;
+  $("yurumeIsaretBtn").disabled = false;
+  $("yurumeBitirBtn").disabled = false;
+  $("yurumeKopyalaBtn").hidden = true;
+  $("yurumeGrafik").replaceChildren();
+  $("yurumeOzet").textContent = "";
+  $("yurumeDurum").textContent = "Kaydediliyor… Yavaş yürü (1 m ≈ 3 sn). Router'ın yanından geçerken Yanındayım'a bas.";
+}
+
+function yurumeIsaret() {
+  if (!yurume) return;
+  yurume.isaretler.push(yurumeSaniye());
+  $("yurumeDurum").textContent = `İşaret konuldu (${yurumeSaniye().toFixed(1)} sn). Yürümeye devam et, sonra Bitir.`;
+}
+
+function yurumeBitir() {
+  if (!yurume) return;
+  const k = yurume;
+  k.sure = yurumeSaniye();
+  yurume = null;
+  sonYurume = k;
+  $("yurumeBaslatBtn").disabled = false;
+  $("yurumeIsaretBtn").disabled = true;
+  $("yurumeBitirBtn").disabled = true;
+  if (k.routerlar.size === 0) {
+    $("yurumeDurum").textContent = "Hiç tarama sonucu gelmedi. Thingy bağlı mı? Tekrar dene.";
+    return;
+  }
+  $("yurumeDurum").textContent = `Kayıt bitti (${k.sure.toFixed(0)} sn).`;
+  yurumeCiz(k);
+
+  /* Ozet: her router icin en guclu an ve isarete uzakligi */
+  const satirlar = [];
+  for (const [kimlik, o] of k.routerlar) {
+    const tepe = o.reduce((a, b) => (b.rssi > a.rssi ? b : a));
+    let s = `Router ${kimlik}: en güçlü ${tepe.rssi} dBm, ${tepe.t.toFixed(1)}. sn (${o.length} örnek)`;
+    if (k.isaretler.length) {
+      const fark = tepe.t - k.isaretler[0];
+      s += ` · işarete göre ${fark >= 0 ? "+" : ""}${fark.toFixed(1)} sn`;
+    }
+    satirlar.push(s);
+  }
+  if (k.isaretler.length) satirlar.push(`Yanındayım işareti: ${k.isaretler.map((t) => t.toFixed(1)).join(", ")}. sn`);
+  $("yurumeOzet").textContent = satirlar.join("\n");
+  $("yurumeKopyalaBtn").hidden = false;
+  console.log("Yurume kaydi", yurumeMetin(k));
+}
+
+/* Grafik: yatay zaman (sn), dikey dBm (-95 ... -25). Her router bir renk,
+ * isaretler kesikli dikey cizgi. SVG ile cizilir (kutuphane yok). */
+const YURUME_RENK = ["var(--vurgu)", "var(--uyari)", "var(--diger)", "var(--basari)"];
+
+function yurumeCiz(k) {
+  const G = 340, Y = 200, sol = 34, alt = 22, ust = 8, sag = 8;
+  const enAz = -95, enCok = -25;
+  const sure = Math.max(k.sure, 1);
+  const x = (t) => sol + (t / sure) * (G - sol - sag);
+  const y = (d) => ust + ((enCok - Math.max(enAz, Math.min(enCok, d))) / (enCok - enAz)) * (Y - ust - alt);
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${G} ${Y}`);
+  const ekle = (ad, ozellik, yazi) => {
+    const e = document.createElementNS(NS, ad);
+    for (const [a, v] of Object.entries(ozellik)) e.setAttribute(a, v);
+    if (yazi !== undefined) e.textContent = yazi;
+    svg.appendChild(e);
+    return e;
+  };
+  /* Yatay cizgiler ve dBm etiketleri */
+  for (let d = -90; d <= -30; d += 20) {
+    ekle("line", { x1: sol, x2: G - sag, y1: y(d), y2: y(d), stroke: "var(--cizgi)", "stroke-width": 1 });
+    ekle("text", { x: sol - 4, y: y(d) + 4, "text-anchor": "end", "font-size": 10, fill: "var(--soluk)" }, d);
+  }
+  /* Zaman etiketleri */
+  const adim = sure > 60 ? 20 : sure > 30 ? 10 : 5;
+  for (let t = 0; t <= sure; t += adim) {
+    ekle("text", { x: x(t), y: Y - 6, "text-anchor": "middle", "font-size": 10, fill: "var(--soluk)" }, `${t}s`);
+  }
+  /* Isaretler */
+  for (const t of k.isaretler) {
+    ekle("line", { x1: x(t), x2: x(t), y1: ust, y2: Y - alt, stroke: "var(--yazi)", "stroke-width": 1.5, "stroke-dasharray": "4 3" });
+  }
+  /* Router cizgileri + noktalar */
+  let i = 0;
+  for (const [kimlik, o] of k.routerlar) {
+    const renk = YURUME_RENK[i % YURUME_RENK.length];
+    ekle("polyline", { points: o.map((p) => `${x(p.t)},${y(p.rssi)}`).join(" "), fill: "none", stroke: renk, "stroke-width": 2 });
+    for (const p of o) ekle("circle", { cx: x(p.t), cy: y(p.rssi), r: 2.5, fill: renk });
+    ekle("text", { x: sol + 6, y: ust + 12 + i * 13, "font-size": 11, fill: renk, "font-weight": 600 }, `Router ${kimlik}`);
+    i++;
+  }
+  $("yurumeGrafik").replaceChildren(svg);
+}
+
+/* Kopyalanacak duz metin: her satir "router,saniye,dBm" */
+function yurumeMetin(k) {
+  const s = ["router,saniye,dbm"];
+  for (const [kimlik, o] of k.routerlar) for (const p of o) s.push(`${kimlik},${p.t.toFixed(1)},${p.rssi}`);
+  for (const t of k.isaretler) s.push(`ISARET,${t.toFixed(1)},`);
+  return s.join("\n");
+}
+
+async function yurumeKopyala() {
+  if (!sonYurume) return;
+  try {
+    await navigator.clipboard.writeText(yurumeMetin(sonYurume));
+    $("yurumeDurum").textContent = "Kopyalandı. Bana mesaj olarak yapıştırabilirsin.";
+  } catch {
+    $("yurumeDurum").textContent = "Kopyalanamadı; grafiğin ekran görüntüsünü gönder.";
   }
 }
 
@@ -914,6 +1061,7 @@ async function baglanDugmesi() {
 function ayrildi() {
   komutKagidi = null;
   if (rssiOrnekler) rssiOlcumBitir();
+  if (yurume) yurumeBitir();
   $("sifirlaBtn").disabled = true;
   $("konumSifirlaBtn").disabled = true;
   ekranKilidiniBirak();
@@ -1068,6 +1216,10 @@ $("ayrilBtn").addEventListener("click", ayrilDugmesi);
 $("sifirlaBtn").addEventListener("click", sifirlaDugmesi);
 $("konumSifirlaBtn").addEventListener("click", konumSifirlaDugmesi);
 $("rssiBaslatBtn").addEventListener("click", rssiOlcumBaslat);
+$("yurumeBaslatBtn").addEventListener("click", yurumeBaslat);
+$("yurumeIsaretBtn").addEventListener("click", yurumeIsaret);
+$("yurumeBitirBtn").addEventListener("click", yurumeBitir);
+$("yurumeKopyalaBtn").addEventListener("click", yurumeKopyala);
 
 bugunuGoster();
 grafikCiz();
