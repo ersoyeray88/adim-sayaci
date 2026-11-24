@@ -158,6 +158,7 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
 .router-liste div { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
 .router-liste b { color: var(--yazi); font-weight: 600; }
 .router-liste .bagli b { color: var(--basari); }
+.router-liste .tani { display: block; margin-top: 2px; font-size: 12px; }
 .yurume-kayit { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--soluk);
   border-top: 1px solid var(--cizgi); padding-top: 8px; }
 .yurume-kayit .dugmeler { display: flex; gap: 6px; }
@@ -665,19 +666,74 @@ function ozet(o) {
     ` · ortanca ${d(s[Math.floor(s.length / 2)])} · en zayıf ${d(s[s.length - 1])} dBm (${o.length} örnek)`;
 }
 
-/* 23.11: taramada duyulan router'lar (router karakteristigi).
- *   bayt 0: tarama no, bayt 1: adet, sonra router basina 4 bayt:
- *   kimlik (uint16), rssi (int8), durum (bit 7 bagli, bit 6 son taramada, bit 0-5 kac sn once) */
+/* 23.11: taramada duyulan router'lar (router karakteristigi). 24.11'de tani eklendi:
+ *   bayt 0: tarama no (acilistan beri biten), bayt 1: adet, bayt 2: basarisiz tarama
+ *   sonra router basina 5 bayt: kimlik (uint16), rssi (int8),
+ *   durum (bit 7 bagli, bit 6 son taramada, bit 0-5 kac sn once), duyulma (acilistan beri)
+ * Sayaclar 255'ten sonra 0'a doner; farki (a - b) & 255 ile aliyoruz. */
 const ROUTER_BAGLI = 0x80;
 const ROUTER_YENI  = 0x40;
 
+/* Tani (son 30 sn): Thingy kac tarama bitirdi, kaci telefona ulasti,
+ * her router kac taramada duyuldu. Sorun taramada mi telefona gonderimde mi? */
+const TANI_PENCERE_MS = 30000;
+let taniGecmis = [];   /* her paketten bir an: {t, no, basarisiz, duyulma: Map} */
+let taniAlinan = [];   /* telefona ulasan yeni taramalarin zamani */
+let sonAnlik = null;   /* en son gelen paketin sayaclari (yurume kaydi baslangici icin) */
+
+function taniHesapla(simdi) {
+  taniGecmis = taniGecmis.filter((a) => simdi - a.t <= TANI_PENCERE_MS);
+  taniAlinan = taniAlinan.filter((t) => simdi - t <= TANI_PENCERE_MS);
+  if (taniGecmis.length < 2) return null;
+  const eski = taniGecmis[0], yeni = taniGecmis[taniGecmis.length - 1];
+  const fark = (a, b) => (a - b) & 0xFF;
+  const biten = fark(yeni.no, eski.no);
+  if (biten === 0) return null;
+  const duyulma = new Map();
+  for (const [k, d] of yeni.duyulma) {
+    if (eski.duyulma.has(k)) duyulma.set(k, fark(d, eski.duyulma.get(k)));
+  }
+  return {
+    sn: Math.round((yeni.t - eski.t) / 1000),
+    biten,
+    ulasan: taniAlinan.filter((t) => t > eski.t).length,
+    basarisiz: fark(yeni.basarisiz, eski.basarisiz),
+    duyulma,
+  };
+}
+
 function routerlarGeldi(olay) {
   const dv = olay.target.value;
-  if (dv.byteLength < 2) return;
+  if (dv.byteLength < 3) return;
   const no = dv.getUint8(0);
-  const adet = Math.min(dv.getUint8(1), Math.floor((dv.byteLength - 2) / 4));
+  const adet = Math.min(dv.getUint8(1), Math.floor((dv.byteLength - 3) / 5));
+  const basarisiz = dv.getUint8(2);
   const yeniTarama = no !== sonTaramaNo;
   sonTaramaNo = no;
+
+  /* Tani icin bu anin sayaclari */
+  const simdi = performance.now();
+  const anlik = { t: simdi, no, basarisiz, duyulma: new Map() };
+  for (let i = 0; i < adet; i++) {
+    const b = 3 + i * 5;
+    anlik.duyulma.set(dv.getUint16(b, true).toString(16).toUpperCase().padStart(4, "0"), dv.getUint8(b + 4));
+  }
+  taniGecmis.push(anlik);
+  sonAnlik = anlik;
+  if (yurume && yeniTarama) yurume.ulasan++;
+  /* Kayit sirasinda ilk kez gorulen router: sayaci o andan itibaren say */
+  if (yurume) {
+    for (let i = 0; i < adet; i++) {
+      const b = 3 + i * 5;
+      const k = dv.getUint16(b, true).toString(16).toUpperCase().padStart(4, "0");
+      if (!yurume.taban.has(k)) {
+        const yeni = (dv.getUint8(b + 3) & ROUTER_YENI) !== 0;   /* bu taramada duyulduysa onu da say */
+        yurume.taban.set(k, { d: (dv.getUint8(b + 4) - (yeni ? 1 : 0)) & 0xFF, no: (no - (yeni ? 1 : 0)) & 0xFF });
+      }
+    }
+  }
+  if (yeniTarama) taniAlinan.push(simdi);
+  const tani = taniHesapla(simdi);
 
   const liste = $("routerListe");
   liste.hidden = false;
@@ -689,7 +745,7 @@ function routerlarGeldi(olay) {
   liste.appendChild(baslik);
 
   for (let i = 0; i < adet; i++) {
-    const b = 2 + i * 4;
+    const b = 3 + i * 5;
     const kimlik = dv.getUint16(b, true).toString(16).toUpperCase().padStart(4, "0");
     const rssi = dv.getInt8(b + 2);
     const durum = dv.getUint8(b + 3);
@@ -704,6 +760,7 @@ function routerlarGeldi(olay) {
     deger.textContent = `${rssi < 0 ? "−" : ""}${Math.abs(rssi)} dBm`;
     sag.appendChild(deger);
     if (yas >= 3) sag.append(` (${yas >= 63 ? "60+" : yas} sn önce)`);
+    if (tani && tani.duyulma.has(kimlik)) sag.append(` · ${tani.duyulma.get(kimlik)}/${tani.biten}`);
     satir.append(sol, sag);
     liste.appendChild(satir);
 
@@ -718,6 +775,15 @@ function routerlarGeldi(olay) {
       yurume.routerlar.get(kimlik).push({ t: yurumeSaniye(), rssi });
     }
   }
+
+  /* Tani satiri: X/Y = router son 30 sn'de biten Y taramanin X'inde duyuldu */
+  const t = document.createElement("div");
+  t.className = "tani";
+  t.textContent = tani
+    ? `Tarama (son ${tani.sn} sn): Thingy ${tani.biten} tarama bitirdi · telefona ${tani.ulasan} ulaştı` +
+      (tani.basarisiz ? ` · ${tani.basarisiz} başarısız` : "")
+    : "Tarama sağlığı hesaplanıyor…";
+  liste.appendChild(t);
 }
 
 /* 24.11: yurume kaydi. Router'in yanindan yururken her taramadaki sinyali
@@ -736,7 +802,10 @@ function yurumeSaniye() {
 }
 
 function yurumeBaslat() {
-  yurume = { t0: performance.now(), routerlar: new Map(), isaretler: [] };
+  /* basAnlik: kayit basindaki sayaclar; bitiste farkla tarama sagligi hesaplanir */
+  yurume = { t0: performance.now(), routerlar: new Map(), isaretler: [], basAnlik: sonAnlik, ulasan: 0, taban: new Map() };
+  /* Basta duyulan router'larin sayaclari: taban */
+  if (sonAnlik) for (const [r, d] of sonAnlik.duyulma) yurume.taban.set(r, { d, no: sonAnlik.no });
   $("yurumeBaslatBtn").disabled = true;
   $("yurumeIsaretBtn").disabled = false;
   $("yurumeBitirBtn").disabled = false;
@@ -767,6 +836,7 @@ function yurumeBitir() {
     sure: (performance.now() - k.t0) / 1000,
     routerlar: [...k.routerlar],
     isaretler: k.isaretler,
+    tani: yurumeTani(k),
   };
   yurumeKayitlari.unshift(kayit);                       /* en yeni basa */
   yurumeKayitlari = yurumeKayitlari.slice(0, YURUME_EN_FAZLA);
@@ -806,6 +876,26 @@ function yurumeListele() {
   }
 }
 
+/* Kaydin tarama sagligi: baslangic ve bitis sayaclari arasindaki fark.
+ * Kayit basladiginda hic paket gelmemisse hesaplanamaz (null). */
+function yurumeTani(k) {
+  const bas = k.basAnlik, son = sonAnlik;
+  if (!bas || !son || son === bas) return null;
+  const fark = (a, b) => (a - b) & 0xFF;
+  /* Her router: tabanindan bu yana kac taramanin kacinda duyuldu */
+  const duyulma = [];
+  for (const [r, d] of son.duyulma) {
+    const t = k.taban.get(r);
+    if (t) duyulma.push([r, fark(d, t.d), fark(son.no, t.no)]);
+  }
+  return {
+    biten: fark(son.no, bas.no),
+    ulasan: k.ulasan,
+    basarisiz: fark(son.basarisiz, bas.basarisiz),
+    duyulma,
+  };
+}
+
 /* Ozet: her router icin en guclu an ve isarete uzakligi */
 function yurumeOzet(k) {
   const satirlar = [];
@@ -819,6 +909,11 @@ function yurumeOzet(k) {
     satirlar.push(s);
   }
   if (k.isaretler.length) satirlar.push(`Yanındayım işareti: ${k.isaretler.map((t) => t.toFixed(1)).join(", ")}. sn`);
+  if (k.tani && k.tani.biten) {
+    const d = k.tani.duyulma.map(([r, n, top]) => `${r} ${n}/${top}`).join(", ");
+    satirlar.push(`Tarama: Thingy ${k.tani.biten} bitirdi · telefona ${k.tani.ulasan} ulaştı` +
+      (k.tani.basarisiz ? ` · ${k.tani.basarisiz} başarısız` : "") + (d ? ` · duyulma: ${d}` : ""));
+  }
   return satirlar.join("\n");
 }
 
@@ -893,6 +988,8 @@ function yurumeMetin(k) {
   const s = ["router,saniye,dbm"];
   for (const [kimlik, o] of k.routerlar) for (const p of o) s.push(`${kimlik},${p.t.toFixed(1)},${p.rssi}`);
   for (const t of k.isaretler) s.push(`ISARET,${t.toFixed(1)},`);
+  if (k.tani) s.push(`TANI,biten=${k.tani.biten},ulasan=${k.tani.ulasan},basarisiz=${k.tani.basarisiz},` +
+    k.tani.duyulma.map(([r, n, top]) => `${r}=${n}/${top}`).join(","));
   return s.join("\n");
 }
 
@@ -1127,6 +1224,8 @@ function ayrildi() {
   komutKagidi = null;
   if (rssiOrnekler) rssiOlcumBitir();
   if (yurume) yurumeBitir();
+  taniGecmis = [];
+  taniAlinan = [];
   $("sifirlaBtn").disabled = true;
   $("konumSifirlaBtn").disabled = true;
   ekranKilidiniBirak();
