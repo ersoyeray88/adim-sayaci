@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v16";  /* v16 (24.11.2026): yurume kaydi grafigi */
+const SURUM = "adim-sayaci-v17";  /* v17 (24.11.2026): yurume kayitlari saklanir */
 const DOSYALAR = [
   "./",
   "./index.html",

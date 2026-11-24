@@ -163,6 +163,10 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
 .yurume-kayit .dugmeler { display: flex; gap: 6px; }
 .yurume-kayit button { min-height: 40px; padding: 8px 10px; font-size: 14px; }
 .yurume-kayit svg { width: 100%; height: auto; background: var(--yuzey); border-radius: 8px; }
+.yurume-kayit .kayit { border: 1px solid var(--cizgi); border-radius: 8px; padding: 8px;
+  display: flex; flex-direction: column; gap: 6px; }
+.yurume-kayit .kayit-baslik { display: flex; justify-content: space-between; align-items: center; color: var(--yazi); font-weight: 600; }
+.yurume-kayit .kayit-baslik button { min-height: 32px; padding: 4px 10px; font-size: 13px; }
 .yurume-kayit .ozet { color: var(--yazi); font-variant-numeric: tabular-nums; white-space: pre-line; }
 .rssi-olcum li { white-space: pre-line; margin-bottom: 4px; }
 .rssi-olcum ol { margin: 0; padding-left: 20px; color: var(--yazi); font-variant-numeric: tabular-nums; }
@@ -280,9 +284,8 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
           <button id="yurumeIsaretBtn" type="button" class="ikincil" disabled>Yanındayım</button>
           <button id="yurumeBitirBtn" type="button" class="ikincil" disabled>Bitir</button>
         </div>
-        <div id="yurumeGrafik"></div>
-        <span id="yurumeOzet" class="ozet"></span>
-        <button id="yurumeKopyalaBtn" type="button" class="ikincil" hidden>Veriyi kopyala (bana yapıştır)</button>
+        <div id="yurumeKayitlar" class="yurume-kayit"></div>
+        <button id="yurumeSilBtn" type="button" class="ikincil dikkat" hidden>Tüm kayıtları sil</button>
       </div>
     </div>
     <div id="anomaliUyari" class="bilgi-kutu" hidden>
@@ -721,7 +724,12 @@ function routerlarGeldi(olay) {
  * zamaniyla kaydeder, sonunda grafik cizer. "Yanindayim" ile router'in
  * yanindan gecilen an isaretlenir: sinyalin tepesi o ana denk geliyor mu? */
 let yurume = null;          /* null = kayit yok */
-let sonYurume = null;       /* biten son kayit (kopyalamak icin) */
+
+/* 24.11: biten kayitlar saklanir (telefonda, sayfa kapansa da kalir).
+ * En yeni basta, en fazla YURUME_EN_FAZLA kayit. Saklarken Map -> dizi. */
+const YURUME_ANAHTAR = "yurume_kayitlari_v1";
+const YURUME_EN_FAZLA = 20;
+let yurumeKayitlari = oku(YURUME_ANAHTAR, []);   /* [{no, saat, sure, routerlar: [[kimlik, [{t, rssi}]]], isaretler}] */
 
 function yurumeSaniye() {
   return (performance.now() - yurume.t0) / 1000;
@@ -732,9 +740,6 @@ function yurumeBaslat() {
   $("yurumeBaslatBtn").disabled = true;
   $("yurumeIsaretBtn").disabled = false;
   $("yurumeBitirBtn").disabled = false;
-  $("yurumeKopyalaBtn").hidden = true;
-  $("yurumeGrafik").replaceChildren();
-  $("yurumeOzet").textContent = "";
   $("yurumeDurum").textContent = "Kaydediliyor… Yavaş yürü (1 m ≈ 3 sn). Router'ın yanından geçerken Yanındayım'a bas.";
 }
 
@@ -747,9 +752,7 @@ function yurumeIsaret() {
 function yurumeBitir() {
   if (!yurume) return;
   const k = yurume;
-  k.sure = yurumeSaniye();
   yurume = null;
-  sonYurume = k;
   $("yurumeBaslatBtn").disabled = false;
   $("yurumeIsaretBtn").disabled = true;
   $("yurumeBitirBtn").disabled = true;
@@ -757,10 +760,54 @@ function yurumeBitir() {
     $("yurumeDurum").textContent = "Hiç tarama sonucu gelmedi. Thingy bağlı mı? Tekrar dene.";
     return;
   }
-  $("yurumeDurum").textContent = `Kayıt bitti (${k.sure.toFixed(0)} sn).`;
-  yurumeCiz(k);
+  const sonNo = yurumeKayitlari.length ? yurumeKayitlari[0].no : 0;
+  const kayit = {
+    no: sonNo + 1,
+    saat: new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }),
+    sure: (performance.now() - k.t0) / 1000,
+    routerlar: [...k.routerlar],
+    isaretler: k.isaretler,
+  };
+  yurumeKayitlari.unshift(kayit);                       /* en yeni basa */
+  yurumeKayitlari = yurumeKayitlari.slice(0, YURUME_EN_FAZLA);
+  yaz(YURUME_ANAHTAR, yurumeKayitlari);
+  $("yurumeDurum").textContent = `${kayit.no}. kayıt bitti (${kayit.sure.toFixed(0)} sn). Kayıtlar aşağıda saklanıyor.`;
+  console.log("Yurume kaydi", yurumeMetin(kayit));
+  yurumeListele();
+}
 
-  /* Ozet: her router icin en guclu an ve isarete uzakligi */
+/* Saklanan butun kayitlari ciz: her biri baslik + grafik + ozet + kopyala */
+function yurumeListele() {
+  const kutu = $("yurumeKayitlar");
+  kutu.replaceChildren();
+  $("yurumeSilBtn").hidden = yurumeKayitlari.length === 0;
+  if (yurumeKayitlari.length) $("rssiOlcum").hidden = false;   /* Thingy bagli olmasa da eski kayitlar gorunsun */
+  for (const k of yurumeKayitlari) {
+    const div = document.createElement("div");
+    div.className = "kayit";
+
+    const baslik = document.createElement("div");
+    baslik.className = "kayit-baslik";
+    const ad = document.createElement("span");
+    ad.textContent = `${k.no}. kayıt · ${k.saat} · ${k.sure.toFixed(0)} sn`;
+    const kopya = document.createElement("button");
+    kopya.type = "button";
+    kopya.className = "ikincil";
+    kopya.textContent = "Kopyala";
+    kopya.addEventListener("click", () => yurumeKopyala(k, kopya));
+    baslik.append(ad, kopya);
+
+    const ozet = document.createElement("span");
+    ozet.className = "ozet";
+    ozet.textContent = yurumeOzet(k);
+
+    div.append(baslik, yurumeCiz(k), ozet);
+    kutu.appendChild(div);
+  }
+}
+
+/* Ozet: her router icin en guclu an ve isarete uzakligi */
+function yurumeOzet(k) {
   const satirlar = [];
   for (const [kimlik, o] of k.routerlar) {
     const tepe = o.reduce((a, b) => (b.rssi > a.rssi ? b : a));
@@ -772,9 +819,25 @@ function yurumeBitir() {
     satirlar.push(s);
   }
   if (k.isaretler.length) satirlar.push(`Yanındayım işareti: ${k.isaretler.map((t) => t.toFixed(1)).join(", ")}. sn`);
-  $("yurumeOzet").textContent = satirlar.join("\n");
-  $("yurumeKopyalaBtn").hidden = false;
-  console.log("Yurume kaydi", yurumeMetin(k));
+  return satirlar.join("\n");
+}
+
+function yurumeHepsiniSil() {
+  if (!yurumeKayitlari.length) return;
+  /* Tarayici penceresi acmadan iki adimli onay: ilk basista dugme degisir */
+  const d = $("yurumeSilBtn");
+  if (d.dataset.onay !== "1") {
+    d.dataset.onay = "1";
+    d.textContent = "Emin misin? Tekrar bas";
+    setTimeout(() => { d.dataset.onay = ""; d.textContent = "Tüm kayıtları sil"; }, 4000);
+    return;
+  }
+  d.dataset.onay = "";
+  d.textContent = "Tüm kayıtları sil";
+  yurumeKayitlari = [];
+  yaz(YURUME_ANAHTAR, yurumeKayitlari);
+  yurumeListele();
+  $("yurumeDurum").textContent = "Kayıtlar silindi.";
 }
 
 /* Grafik: yatay zaman (sn), dikey dBm (-95 ... -25). Her router bir renk,
@@ -785,6 +848,8 @@ function yurumeCiz(k) {
   const G = 340, Y = 200, sol = 34, alt = 22, ust = 8, sag = 8;
   const enAz = -95, enCok = -25;
   const sure = Math.max(k.sure, 1);
+  /* Kimlige gore sirala: ayni router her kayitta ayni renkte cizilsin */
+  const routerlar = new Map([...k.routerlar].sort((a, b) => a[0].localeCompare(b[0])));
   const x = (t) => sol + (t / sure) * (G - sol - sag);
   const y = (d) => ust + ((enCok - Math.max(enAz, Math.min(enCok, d))) / (enCok - enAz)) * (Y - ust - alt);
   const NS = "http://www.w3.org/2000/svg";
@@ -813,14 +878,14 @@ function yurumeCiz(k) {
   }
   /* Router cizgileri + noktalar */
   let i = 0;
-  for (const [kimlik, o] of k.routerlar) {
+  for (const [kimlik, o] of routerlar) {
     const renk = YURUME_RENK[i % YURUME_RENK.length];
     ekle("polyline", { points: o.map((p) => `${x(p.t)},${y(p.rssi)}`).join(" "), fill: "none", stroke: renk, "stroke-width": 2 });
     for (const p of o) ekle("circle", { cx: x(p.t), cy: y(p.rssi), r: 2.5, fill: renk });
     ekle("text", { x: sol + 6, y: ust + 12 + i * 13, "font-size": 11, fill: renk, "font-weight": 600 }, `Router ${kimlik}`);
     i++;
   }
-  $("yurumeGrafik").replaceChildren(svg);
+  return svg;
 }
 
 /* Kopyalanacak duz metin: her satir "router,saniye,dBm" */
@@ -831,14 +896,14 @@ function yurumeMetin(k) {
   return s.join("\n");
 }
 
-async function yurumeKopyala() {
-  if (!sonYurume) return;
+async function yurumeKopyala(k, dugme) {
   try {
-    await navigator.clipboard.writeText(yurumeMetin(sonYurume));
-    $("yurumeDurum").textContent = "Kopyalandı. Bana mesaj olarak yapıştırabilirsin.";
+    await navigator.clipboard.writeText(`Kayit ${k.no} (${k.saat})\n` + yurumeMetin(k));
+    dugme.textContent = "Kopyalandı";
   } catch {
-    $("yurumeDurum").textContent = "Kopyalanamadı; grafiğin ekran görüntüsünü gönder.";
+    dugme.textContent = "Olmadı";
   }
+  setTimeout(() => { dugme.textContent = "Kopyala"; }, 2000);
 }
 
 const KAT_JIRO_VAR   = 0x10;
@@ -1219,7 +1284,8 @@ $("rssiBaslatBtn").addEventListener("click", rssiOlcumBaslat);
 $("yurumeBaslatBtn").addEventListener("click", yurumeBaslat);
 $("yurumeIsaretBtn").addEventListener("click", yurumeIsaret);
 $("yurumeBitirBtn").addEventListener("click", yurumeBitir);
-$("yurumeKopyalaBtn").addEventListener("click", yurumeKopyala);
+$("yurumeSilBtn").addEventListener("click", yurumeHepsiniSil);
+yurumeListele();   /* acilista saklanan kayitlari goster */
 
 bugunuGoster();
 grafikCiz();
