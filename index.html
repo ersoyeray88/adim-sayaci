@@ -159,6 +159,11 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
 .router-liste b { color: var(--yazi); font-weight: 600; }
 .router-liste .bagli b { color: var(--basari); }
 .router-liste .tani { display: block; margin-top: 2px; font-size: 12px; }
+.gecis-kutu { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--soluk);
+  border-top: 1px solid var(--cizgi); padding-top: 8px; }
+.gecis-kutu b { color: var(--yazi); }
+.gecis-kutu .gecis-oldu { color: var(--basari); font-weight: 600; }
+.gecis-kutu .gecis-elendi { color: var(--soluk); }
 .yurume-kayit { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--soluk);
   border-top: 1px solid var(--cizgi); padding-top: 8px; }
 .yurume-kayit .dugmeler { display: flex; gap: 6px; }
@@ -273,6 +278,7 @@ button:focus-visible { outline: 3px solid var(--vurgu); outline-offset: 2px; }
       <span id="routerAdres" class="jiro-ham"></span>
     </div>
     <div id="routerListe" class="router-liste" hidden></div>
+    <div id="gecisKutu" class="gecis-kutu" hidden></div>
     <div id="rssiOlcum" class="rssi-olcum" hidden>
       <button id="rssiBaslatBtn" type="button" class="ikincil">Ölçüm başlat (30 sn)</button>
       <span id="rssiOlcumDurum">Sabit dur, başlat'a bas. Her router için sonuç aşağıya eklenir.</span>
@@ -704,10 +710,16 @@ function taniHesapla(simdi) {
 
 function routerlarGeldi(olay) {
   const dv = olay.target.value;
-  if (dv.byteLength < 3) return;
+  /* 25.11: ayni kagittan gecis olayi da gelir: 10 bayt ve ilk bayt 'G' */
+  if (dv.byteLength === 10 && dv.getUint8(0) === 0x47) {
+    gecisGeldi(dv);
+    return;
+  }
+  if (dv.byteLength < 4) return;
   const no = dv.getUint8(0);
-  const adet = Math.min(dv.getUint8(1), Math.floor((dv.byteLength - 3) / 5));
+  const adet = Math.min(dv.getUint8(1), Math.floor((dv.byteLength - 4) / 5));
   const basarisiz = dv.getUint8(2);
+  bleAralikMs = dv.getUint8(3);
   const yeniTarama = no !== sonTaramaNo;
   sonTaramaNo = no;
 
@@ -715,7 +727,7 @@ function routerlarGeldi(olay) {
   const simdi = performance.now();
   const anlik = { t: simdi, no, basarisiz, duyulma: new Map() };
   for (let i = 0; i < adet; i++) {
-    const b = 3 + i * 5;
+    const b = 4 + i * 5;
     anlik.duyulma.set(dv.getUint16(b, true).toString(16).toUpperCase().padStart(4, "0"), dv.getUint8(b + 4));
   }
   taniGecmis.push(anlik);
@@ -724,7 +736,7 @@ function routerlarGeldi(olay) {
   /* Kayit sirasinda ilk kez gorulen router: sayaci o andan itibaren say */
   if (yurume) {
     for (let i = 0; i < adet; i++) {
-      const b = 3 + i * 5;
+      const b = 4 + i * 5;
       const k = dv.getUint16(b, true).toString(16).toUpperCase().padStart(4, "0");
       if (!yurume.taban.has(k)) {
         const yeni = (dv.getUint8(b + 3) & ROUTER_YENI) !== 0;   /* bu taramada duyulduysa onu da say */
@@ -745,7 +757,7 @@ function routerlarGeldi(olay) {
   liste.appendChild(baslik);
 
   for (let i = 0; i < adet; i++) {
-    const b = 3 + i * 5;
+    const b = 4 + i * 5;
     const kimlik = dv.getUint16(b, true).toString(16).toUpperCase().padStart(4, "0");
     const rssi = dv.getInt8(b + 2);
     const durum = dv.getUint8(b + 3);
@@ -783,7 +795,63 @@ function routerlarGeldi(olay) {
     ? `Tarama (son ${tani.sn} sn): Thingy ${tani.biten} tarama bitirdi · telefona ${tani.ulasan} ulaştı` +
       (tani.basarisiz ? ` · ${tani.basarisiz} başarısız` : "")
     : "Tarama sağlığı hesaplanıyor…";
+  t.textContent += ` · Bluetooth aralığı ${bleAralikMs ? (bleAralikMs >= 255 ? "255+" : bleAralikMs) + " ms" : "bilinmiyor"}`;
   liste.appendChild(t);
+}
+
+/* 25.11: router'in hizasindan gecis olayi (router_gecis.c).
+ *   0 'G', 1 sayac, 2 tur (1 gecildi, 2 elendi-dondu, 3 elendi-yurumuyor),
+ *   3-4 kimlik, 5 dusus dB, 6 donus derece, 7 gecikme x0.1 sn, 8 once dBm, 9 sonra dBm */
+let bleAralikMs = 0;
+let sonGecisSayac = null;
+const gecisler = [];          /* son olaylar, en yeni basta (ekranda) */
+const GECIS_GOSTER = 5;
+
+function gecisGeldi(dv) {
+  const sayac = dv.getUint8(1);
+  if (sayac === sonGecisSayac) return;   /* ayni olay tekrar geldi */
+  sonGecisSayac = sayac;
+  const o = {
+    tur: dv.getUint8(2),
+    kimlik: dv.getUint16(3, true).toString(16).toUpperCase().padStart(4, "0"),
+    dusus: dv.getUint8(5),
+    donus: dv.getUint8(6),
+    gecikme: dv.getUint8(7) / 10,
+    once: dv.getInt8(8),
+    sonra: dv.getInt8(9),
+    saat: new Date(Date.now() - dv.getUint8(7) * 100).toLocaleTimeString("tr-TR"),
+  };
+  /* Yurume kaydi suruyorsa olayi kaydin zamanina yerlestir */
+  if (yurume) {
+    yurume.gecisler.push({ t: Math.max(0, yurumeSaniye() - o.gecikme), kimlik: o.kimlik, tur: o.tur, dusus: o.dusus, donus: o.donus });
+  }
+  gecisler.unshift(o);
+  gecisler.length = Math.min(gecisler.length, GECIS_GOSTER);
+  gecisCiz();
+}
+
+function gecisMetni(o) {
+  const d = (n) => `${n < 0 ? "−" : ""}${Math.abs(n)}`;
+  if (o.tur === 1) {
+    return `${o.saat} · Router ${o.kimlik}'in hizasından geçtin (${d(o.once)} → ${d(o.sonra)} dBm, ${o.dusus} dB düşüş, dönüş ${o.donus}°)`;
+  }
+  const neden = o.tur === 2 ? `döndün (${o.donus}°)` : "yürümüyordun";
+  return `${o.saat} · Geçiş sayılmadı: Router ${o.kimlik} ${o.dusus} dB düştü ama ${neden}`;
+}
+
+function gecisCiz() {
+  const kutu = $("gecisKutu");
+  kutu.hidden = gecisler.length === 0;
+  kutu.replaceChildren();
+  const b = document.createElement("b");
+  b.textContent = "Router geçişleri (son 5)";
+  kutu.appendChild(b);
+  for (const o of gecisler) {
+    const s = document.createElement("div");
+    s.className = o.tur === 1 ? "gecis-oldu" : "gecis-elendi";
+    s.textContent = gecisMetni(o);
+    kutu.appendChild(s);
+  }
 }
 
 /* 24.11: yurume kaydi. Router'in yanindan yururken her taramadaki sinyali
@@ -803,7 +871,7 @@ function yurumeSaniye() {
 
 function yurumeBaslat() {
   /* basAnlik: kayit basindaki sayaclar; bitiste farkla tarama sagligi hesaplanir */
-  yurume = { t0: performance.now(), routerlar: new Map(), isaretler: [], basAnlik: sonAnlik, ulasan: 0, taban: new Map() };
+  yurume = { t0: performance.now(), routerlar: new Map(), isaretler: [], basAnlik: sonAnlik, ulasan: 0, taban: new Map(), gecisler: [] };
   /* Basta duyulan router'larin sayaclari: taban */
   if (sonAnlik) for (const [r, d] of sonAnlik.duyulma) yurume.taban.set(r, { d, no: sonAnlik.no });
   $("yurumeBaslatBtn").disabled = true;
@@ -836,6 +904,7 @@ function yurumeBitir() {
     sure: (performance.now() - k.t0) / 1000,
     routerlar: [...k.routerlar],
     isaretler: k.isaretler,
+    gecisler: k.gecisler,
     tani: yurumeTani(k),
   };
   yurumeKayitlari.unshift(kayit);                       /* en yeni basa */
@@ -909,6 +978,18 @@ function yurumeOzet(k) {
     satirlar.push(s);
   }
   if (k.isaretler.length) satirlar.push(`Yanındayım işareti: ${k.isaretler.map((t) => t.toFixed(1)).join(", ")}. sn`);
+  for (const g of k.gecisler || []) {
+    let s = g.tur === 1
+      ? `ALGILANAN GEÇİŞ: Router ${g.kimlik} ${g.t.toFixed(1)}. sn, ${g.dusus} dB, dönüş ${g.donus}°`
+      : `Sayılmayan basamak: Router ${g.kimlik} ${g.t.toFixed(1)}. sn, ${g.dusus} dB, ${g.tur === 2 ? `döndün ${g.donus}°` : "yürümüyordun"}`;
+    if (k.isaretler.length) {
+      /* En yakin isarete gore fark */
+      const en = k.isaretler.reduce((a, b) => (Math.abs(b - g.t) < Math.abs(a - g.t) ? b : a));
+      const f = g.t - en;
+      s += ` · işarete göre ${f >= 0 ? "+" : ""}${f.toFixed(1)} sn`;
+    }
+    satirlar.push(s);
+  }
   if (k.tani && k.tani.biten) {
     const d = k.tani.duyulma.map(([r, n, top]) => `${r} ${n}/${top}`).join(", ");
     satirlar.push(`Tarama: Thingy ${k.tani.biten} bitirdi · telefona ${k.tani.ulasan} ulaştı` +
@@ -971,6 +1052,12 @@ function yurumeCiz(k) {
   for (const t of k.isaretler) {
     ekle("line", { x1: x(t), x2: x(t), y1: ust, y2: Y - alt, stroke: "var(--yazi)", "stroke-width": 1.5, "stroke-dasharray": "4 3" });
   }
+  /* Algilanan gecisler: duz cizgi (gecis yesil, sayilmayan gri) + ust etiket */
+  for (const g of k.gecisler || []) {
+    const renk = g.tur === 1 ? "var(--basari)" : "var(--soluk)";
+    ekle("line", { x1: x(g.t), x2: x(g.t), y1: ust, y2: Y - alt, stroke: renk, "stroke-width": 2.5, opacity: 0.8 });
+    ekle("text", { x: x(g.t) + 3, y: Y - alt - 4, "font-size": 10, fill: renk, "font-weight": 600 }, g.tur === 1 ? "geçiş" : "dönme");
+  }
   /* Router cizgileri + noktalar */
   let i = 0;
   for (const [kimlik, o] of routerlar) {
@@ -988,6 +1075,7 @@ function yurumeMetin(k) {
   const s = ["router,saniye,dbm"];
   for (const [kimlik, o] of k.routerlar) for (const p of o) s.push(`${kimlik},${p.t.toFixed(1)},${p.rssi}`);
   for (const t of k.isaretler) s.push(`ISARET,${t.toFixed(1)},`);
+  for (const g of k.gecisler || []) s.push(`GECIS,${g.t.toFixed(1)},${g.kimlik},tur=${g.tur},dusus=${g.dusus},donus=${g.donus}`);
   if (k.tani) s.push(`TANI,biten=${k.tani.biten},ulasan=${k.tani.ulasan},basarisiz=${k.tani.basarisiz},` +
     k.tani.duyulma.map(([r, n, top]) => `${r}=${n}/${top}`).join(","));
   return s.join("\n");
@@ -1226,6 +1314,7 @@ function ayrildi() {
   if (yurume) yurumeBitir();
   taniGecmis = [];
   taniAlinan = [];
+  sonGecisSayac = null;
   $("sifirlaBtn").disabled = true;
   $("konumSifirlaBtn").disabled = true;
   ekranKilidiniBirak();

@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v19";  /* v19 (24.11.2026): her yurume kaydina tarama sagligi */
+const SURUM = "adim-sayaci-v20";  /* v20 (25.11.2026): router gecisi, BLE araligi, 4 bayt baslik */
 const DOSYALAR = [
   "./",
   "./index.html",
