@@ -11,7 +11,7 @@
  *
  * App'i guncelledigimizde SURUM'u artiririz; eski kayit silinir.
  */
-const SURUM = "adim-sayaci-v20";  /* v20 (25.11.2026): router gecisi, BLE araligi, 4 bayt baslik */
+const SURUM = "adim-sayaci-v21";  /* v21 (25.11.2026): gecisle konum duzeltme, 12 bayt gecis paketi */
 const DOSYALAR = [
   "./",
   "./index.html",

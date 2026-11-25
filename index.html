@@ -710,8 +710,8 @@ function taniHesapla(simdi) {
 
 function routerlarGeldi(olay) {
   const dv = olay.target.value;
-  /* 25.11: ayni kagittan gecis olayi da gelir: 10 bayt ve ilk bayt 'G' */
-  if (dv.byteLength === 10 && dv.getUint8(0) === 0x47) {
+  /* 25.11: ayni kagittan gecis olayi da gelir: 12 bayt ve ilk bayt 'G' */
+  if (dv.byteLength === 12 && dv.getUint8(0) === 0x47) {
     gecisGeldi(dv);
     return;
   }
@@ -801,7 +801,11 @@ function routerlarGeldi(olay) {
 
 /* 25.11: router'in hizasindan gecis olayi (router_gecis.c).
  *   0 'G', 1 sayac, 2 tur (1 gecildi, 2 elendi-dondu, 3 elendi-yurumuyor),
- *   3-4 kimlik, 5 dusus dB, 6 donus derece, 7 gecikme x0.1 sn, 8 once dBm, 9 sonra dBm */
+ *   3-4 kimlik, 5 dusus dB, 6 donus derece, 7 gecikme x0.1 sn, 8 once dBm, 9 sonra dBm,
+ *   10 duzeltme (0 yok, 1 duzeltildi, 2 tabloda yok, 3 cok buyuk, 4 baska kat, 5 konum bilinmiyor),
+ *   11 duzeltmeden onceki hata x0.1 m */
+const DUZELTME_ADI = ["", "konum düzeltildi", "router tabloda yok, konum düzeltilmedi",
+  "hata çok büyük, konum düzeltilmedi", "router başka katta", "geçiş anındaki konum bilinmiyor"];
 let bleAralikMs = 0;
 let sonGecisSayac = null;
 const gecisler = [];          /* son olaylar, en yeni basta (ekranda) */
@@ -819,11 +823,14 @@ function gecisGeldi(dv) {
     gecikme: dv.getUint8(7) / 10,
     once: dv.getInt8(8),
     sonra: dv.getInt8(9),
+    duzeltme: dv.getUint8(10),
+    hata: dv.getUint8(11) / 10,
     saat: new Date(Date.now() - dv.getUint8(7) * 100).toLocaleTimeString("tr-TR"),
   };
   /* Yurume kaydi suruyorsa olayi kaydin zamanina yerlestir */
   if (yurume) {
-    yurume.gecisler.push({ t: Math.max(0, yurumeSaniye() - o.gecikme), kimlik: o.kimlik, tur: o.tur, dusus: o.dusus, donus: o.donus });
+    yurume.gecisler.push({ t: Math.max(0, yurumeSaniye() - o.gecikme), kimlik: o.kimlik, tur: o.tur, dusus: o.dusus,
+      donus: o.donus, duzeltme: o.duzeltme, hata: o.hata });
   }
   gecisler.unshift(o);
   gecisler.length = Math.min(gecisler.length, GECIS_GOSTER);
@@ -833,10 +840,19 @@ function gecisGeldi(dv) {
 function gecisMetni(o) {
   const d = (n) => `${n < 0 ? "−" : ""}${Math.abs(n)}`;
   if (o.tur === 1) {
-    return `${o.saat} · Router ${o.kimlik}'in hizasından geçtin (${d(o.once)} → ${d(o.sonra)} dBm, ${o.dusus} dB düşüş, dönüş ${o.donus}°)`;
+    return `${o.saat} · Router ${o.kimlik}'in hizasından geçtin (${d(o.once)} → ${d(o.sonra)} dBm, ${o.dusus} dB düşüş, dönüş ${o.donus}°)` +
+      duzeltmeMetni(o);
   }
   const neden = o.tur === 2 ? `döndün (${o.donus}°)` : "yürümüyordun";
   return `${o.saat} · Geçiş sayılmadı: Router ${o.kimlik} ${o.dusus} dB düştü ama ${neden}`;
+}
+
+/* Konuma etkisi: "konum düzeltildi: 3,6 m hata giderildi" gibi */
+function duzeltmeMetni(o) {
+  if (!o.duzeltme) return "";
+  if (o.duzeltme === 1) return ` · KONUM DÜZELTİLDİ: ${o.hata.toFixed(1).replace(".", ",")} m hata giderildi`;
+  if (o.duzeltme === 3) return ` · ${DUZELTME_ADI[3]} (${o.hata.toFixed(1).replace(".", ",")} m)`;
+  return ` · ${DUZELTME_ADI[o.duzeltme] || ""}`;
 }
 
 function gecisCiz() {
@@ -980,7 +996,7 @@ function yurumeOzet(k) {
   if (k.isaretler.length) satirlar.push(`Yanındayım işareti: ${k.isaretler.map((t) => t.toFixed(1)).join(", ")}. sn`);
   for (const g of k.gecisler || []) {
     let s = g.tur === 1
-      ? `ALGILANAN GEÇİŞ: Router ${g.kimlik} ${g.t.toFixed(1)}. sn, ${g.dusus} dB, dönüş ${g.donus}°`
+      ? `ALGILANAN GEÇİŞ: Router ${g.kimlik} ${g.t.toFixed(1)}. sn, ${g.dusus} dB, dönüş ${g.donus}°` + duzeltmeMetni(g)
       : `Sayılmayan basamak: Router ${g.kimlik} ${g.t.toFixed(1)}. sn, ${g.dusus} dB, ${g.tur === 2 ? `döndün ${g.donus}°` : "yürümüyordun"}`;
     if (k.isaretler.length) {
       /* En yakin isarete gore fark */
@@ -1075,7 +1091,7 @@ function yurumeMetin(k) {
   const s = ["router,saniye,dbm"];
   for (const [kimlik, o] of k.routerlar) for (const p of o) s.push(`${kimlik},${p.t.toFixed(1)},${p.rssi}`);
   for (const t of k.isaretler) s.push(`ISARET,${t.toFixed(1)},`);
-  for (const g of k.gecisler || []) s.push(`GECIS,${g.t.toFixed(1)},${g.kimlik},tur=${g.tur},dusus=${g.dusus},donus=${g.donus}`);
+  for (const g of k.gecisler || []) s.push(`GECIS,${g.t.toFixed(1)},${g.kimlik},tur=${g.tur},dusus=${g.dusus},donus=${g.donus},duzeltme=${g.duzeltme ?? ""},hata=${g.hata ?? ""}`);
   if (k.tani) s.push(`TANI,biten=${k.tani.biten},ulasan=${k.tani.ulasan},basarisiz=${k.tani.basarisiz},` +
     k.tani.duyulma.map(([r, n, top]) => `${r}=${n}/${top}`).join(","));
   return s.join("\n");
